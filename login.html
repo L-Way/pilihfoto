@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Masuk — Meja Foto Kaone</title>
+<style>
+  :root{
+    --bg:#faf8f3; --panel:#ffffff; --border:#e3ddc9; --text:#211c0d; --text-dim:#6b6250;
+    --text-faint:#9a917c; --accent:#ffd700; --accent-hover:#e6c200; --accent-ink:#211c0d;
+    --danger:#b3261e; --radius:12px;
+    --sans:-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    display:flex; align-items:center; justify-content:center; min-height:100dvh;
+    background: radial-gradient(ellipse 900px 500px at 50% -10%, rgba(255,215,0,.12), transparent 60%), var(--bg);
+    font-family:var(--sans); color:var(--text); padding:20px;
+  }
+  .card{
+    width:100%; max-width:380px; background:var(--panel); border:1px solid var(--border);
+    border-radius:var(--radius); padding:30px 26px; box-shadow:0 10px 30px rgba(0,0,0,.06);
+  }
+  h1{ font-size:20px; margin:0 0 4px; text-align:center; }
+  h1 .dot{ color:var(--accent); }
+  p.sub{ margin:0 0 24px; text-align:center; color:var(--text-faint); font-size:12.5px; }
+  label{ display:block; font-size:12px; color:var(--text-dim); margin:0 0 5px; font-weight:600; }
+  input{
+    width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px;
+    font-size:14px; margin-bottom:16px; font-family:inherit; background:#fff; color:var(--text);
+  }
+  input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  button{
+    width:100%; padding:11px; border-radius:8px; border:1px solid var(--accent-hover);
+    background:var(--accent); color:var(--accent-ink); font-weight:700; font-size:14px; cursor:pointer;
+  }
+  button:hover{ background:var(--accent-hover); }
+  button:disabled{ opacity:.5; cursor:not-allowed; }
+  .msg{ margin-top:14px; font-size:12.5px; text-align:center; min-height:16px; }
+  .msg.err{ color:var(--danger); }
+  .msg.ok{ color:#2f6b3a; }
+</style>
+</head>
+<body>
+  <form class="card" id="loginForm" autocomplete="off">
+    <h1>Meja Foto Kaone<span class="dot">.</span></h1>
+    <p class="sub">Masuk untuk melanjutkan.</p>
+    <label for="username">Username</label>
+    <input type="text" id="username" autocomplete="username" required />
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password" required />
+    <button type="submit" id="btnLogin">Masuk</button>
+    <div class="msg" id="msg"></div>
+  </form>
+
+<script>
+  // Ganti sesuai kebutuhan bila Web App di-deploy ulang dan URL berubah.
+  const WEBAPPURL = "https://script.google.com/macros/s/AKfycbztRlvktKzn9vwIQ22plZF9JvVbBRlUtHqWH37AuyRw9NWK3Zbq3aAzR2gZ-8KMt4MJ/exec";
+
+  const form = document.getElementById("loginForm");
+  const msg = document.getElementById("msg");
+  const btn = document.getElementById("btnLogin");
+
+  // kalau sudah login, langsung arahkan
+  (function autoRedirect(){
+    try{
+      const auth = JSON.parse(localStorage.getItem("mfk_auth") || "null");
+      if(auth && auth.token){
+        location.href = (auth.role === "klien") ? "app.html" : "admin.html";
+      }
+    }catch(e){}
+  })();
+
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+    if(!username || !password) return;
+
+    btn.disabled = true;
+    msg.className = "msg";
+    msg.textContent = "Memeriksa…";
+
+    try{
+      const res = await fetch(WEBAPPURL, {
+        method: "POST",
+        body: JSON.stringify({ action: "login", username, password })
+      });
+      const data = await res.json();
+      if(!data.ok){
+        msg.className = "msg err";
+        msg.textContent = data.error || "Gagal masuk.";
+        btn.disabled = false;
+        return;
+      }
+      localStorage.setItem("mfk_auth", JSON.stringify(data));
+      msg.className = "msg ok";
+      msg.textContent = "Berhasil, mengalihkan…";
+      location.href = (data.role === "klien") ? "app.html" : "admin.html";
+    }catch(e){
+      msg.className = "msg err";
+      msg.textContent = "Tidak bisa menghubungi server. Cek koneksi internet Anda.";
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
