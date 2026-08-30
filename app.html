@@ -404,11 +404,31 @@
   body.klien-mode #klienBar{ display:flex; }
   #klienBar .row{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
   #countdownBox{
-    font-family:var(--mono); font-size:14px; font-weight:700; color:var(--text);
+    font-family:var(--mono); font-size:13px; font-weight:700; color:var(--text);
     background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:6px 12px;
+    line-height:1.4;
   }
   #countdownBox.expired{ color:var(--danger); border-color:var(--danger); }
   #countdownBox .lbl{ font-family:var(--sans); font-weight:600; font-size:11px; color:var(--text-faint); display:block; }
+  @media (max-width:1100px){ #countdownBox{ font-size:12px; padding:6px 10px; } }
+
+  /* ---------- popup proses (loading blocking) ---------- */
+  .modal-box.processing{ max-width:340px; text-align:center; padding:28px 24px 24px; }
+  .processing-spinner{
+    width:44px; height:44px; margin:0 auto 16px; border-radius:50%;
+    border:4px solid var(--panel-2); border-top-color:var(--accent);
+    animation:mfk-spin .8s linear infinite;
+  }
+  @keyframes mfk-spin{ to{ transform:rotate(360deg); } }
+  .modal-box.processing h3{ margin:0 0 6px; }
+  .modal-box.processing p{ margin:0; }
+  .processing-dots::after{
+    content:""; display:inline-block; width:1em; text-align:left;
+    animation:mfk-dots 1.2s steps(4,end) infinite;
+  }
+  @keyframes mfk-dots{
+    0%{ content:""; } 25%{ content:"."; } 50%{ content:".."; } 75%{ content:"..."; } 100%{ content:""; }
+  }
   .kat-tabs{ display:flex; gap:8px; flex-wrap:wrap; }
   .kat-tab{
     font-size:12.5px; font-weight:650; padding:7px 13px; border-radius:20px; border:1px solid var(--border);
@@ -536,6 +556,14 @@
   </div>
 </div>
 
+<div class="modal-backdrop hidden" id="processingModal">
+  <div class="modal-box processing">
+    <div class="processing-spinner"></div>
+    <h3 id="processingTitle">Memproses</h3>
+    <p id="processingMsg" class="processing-dots">Mohon tunggu</p>
+  </div>
+</div>
+
 <div id="sidebarBackdrop"></div>
 
 <div id="app">
@@ -550,7 +578,7 @@
 
   <div id="klienBar">
     <div class="row">
-      <div id="countdownBox"><span class="lbl">Sisa waktu akses</span><span id="countdownText">--:--:--</span></div>
+      <div id="countdownBox"><span class="lbl">Sisa waktu akses</span><span id="countdownText">Menghitung…</span></div>
       <div class="kat-tabs" id="katTabs"></div>
       <button class="btn primary small" id="btnSubmitFinal">Submit Pilihan Final</button>
       <button class="btn small" id="btnSendWhatsApp" type="button" disabled title="Submit Pilihan Final dulu untuk mengaktifkan tombol ini">📩 Kirim ke WhatsApp Admin</button>
@@ -1792,6 +1820,18 @@
   $("#resultModalOk").addEventListener("click", closeResultModal);
   $("#resultModal").addEventListener("click", (ev) => { if(ev.target.id === "resultModal") closeResultModal(); });
 
+  // Popup proses generik — dipakai untuk tombol yang perlu memanggil server
+  // (mis. mengirim data ke spreadsheet) dan butuh waktu, supaya pengguna tidak
+  // bingung / mengira tombolnya tidak berfungsi lalu mengeklik berkali-kali.
+  // Sengaja tidak ada tombol tutup/batal di sini karena prosesnya tidak bisa
+  // dibatalkan di tengah jalan (data mungkin sudah separuh terkirim ke server).
+  function openProcessingModal(title, message){
+    $("#processingTitle").textContent = title || "Memproses";
+    $("#processingMsg").textContent = message || "Mohon tunggu";
+    $("#processingModal").classList.remove("hidden");
+  }
+  function closeProcessingModal(){ $("#processingModal").classList.add("hidden"); }
+
   // ---- hapus log ----
   $("#btnClearLogCopy").addEventListener("click", () => { $("#logCopy").innerHTML = ""; });
   $("#btnClearLogRename").addEventListener("click", () => { $("#logRename").innerHTML = ""; });
@@ -2097,6 +2137,7 @@
     window.KLIEN_activeCategory = function(){ return activeCategory; };
 
     window.KLIEN_toggle = function(p){
+      if(hasSubmitted){ $("#klienMsg").textContent = "Pilihan final sudah dikirim ke studio — tidak bisa memilih ulang. Unduhan tetap bisa dilakukan."; return; }
       if(expired){ $("#klienMsg").textContent = "Waktu akses sudah habis — pilihan tidak bisa diubah lagi."; return; }
       if(!activeCategory){ $("#klienMsg").textContent = "Belum ada kategori diatur oleh admin untuk akun Anda."; return; }
       if(!p.categories) p.categories = {};
@@ -2133,6 +2174,21 @@
       });
     }
 
+    // Format sisa waktu sebagai "X Bulan Y Hari Z Jam W Menit V Detik".
+    // Bulan dihitung sebagai 30 hari (perkiraan) supaya tidak perlu logika
+    // kalender kabisat/panjang bulan yang berbeda-beda.
+    function formatCountdownParts(diffMs){
+      let totalSeconds = Math.floor(diffMs / 1000);
+      const detik = totalSeconds % 60;
+      let totalMinutes = Math.floor(totalSeconds / 60);
+      const menit = totalMinutes % 60;
+      let totalHours = Math.floor(totalMinutes / 60);
+      const jam = totalHours % 24;
+      const totalDays = Math.floor(totalHours / 24);
+      const bulan = Math.floor(totalDays / 30);
+      const hari = totalDays % 30;
+      return bulan + " Bulan " + hari + " Hari " + jam + " Jam " + menit + " Menit " + detik + " Detik";
+    }
     function updateCountdown(){
       const box = $("#countdownBox");
       const text = $("#countdownText");
@@ -2145,10 +2201,7 @@
         text.textContent = "Waktu habis";
         return;
       }
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      text.textContent = String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0") + " WIB";
+      text.textContent = formatCountdownParts(diff);
     }
     updateCountdown();
     setInterval(updateCountdown, 1000);
@@ -2197,36 +2250,68 @@
 
     const submitBtn = $("#btnSubmitFinal");
     const btnWa = $("#btnSendWhatsApp");
-    let hasSubmitted = false;
+    const SUBMIT_LABEL_DONE = "Pilihan Sudah Dikirim ✓";
+    // Status "sudah submit final" dicek dari 2 sumber: (1) jawaban server saat
+    // login (paling bisa dipercaya, tersimpan di sheet "Pilihan"), dan (2)
+    // cadangan di localStorage kalau-kalau backend lama belum mengirim field
+    // ini. Begitu true, tetap true walau halaman dimuat ulang / browser ditutup.
+    const submittedStoreKey = "mfk_klien_final_submitted::" + auth.username;
+    let hasSubmitted = !!auth.sudahSubmitFinal;
+    try{ if(localStorage.getItem(submittedStoreKey) === "1") hasSubmitted = true; }catch(e){}
+
+    function lockAfterFinalSubmit(){
+      hasSubmitted = true;
+      try{ localStorage.setItem(submittedStoreKey, "1"); }catch(e){}
+      if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = SUBMIT_LABEL_DONE; }
+      if(btnWa){
+        const waNumber = normalizeWaNumber(auth.adminWhatsApp);
+        if(waNumber){
+          btnWa.disabled = false;
+          btnWa.title = "Kirim ringkasan pilihan ke WhatsApp admin";
+        }else{
+          btnWa.disabled = true;
+          btnWa.title = "Admin belum mengatur nomor WhatsApp.";
+        }
+      }
+    }
+
+    // Kalau saat halaman dimuat sudah pernah submit final sebelumnya (mis. buka
+    // ulang halaman / ganti perangkat), langsung kunci tombolnya tanpa perlu klik.
+    if(hasSubmitted) lockAfterFinalSubmit();
+
     if(submitBtn) submitBtn.addEventListener("click", async () => {
+      // Jaga-jaga: cegah klik ganda saat request masih berjalan, dan cegah
+      // submit lagi kalau baris ini entah bagaimana belum ter-disable.
+      if(hasSubmitted || submitBtn.disabled) return;
       const selections = buildSelectionsMap();
       const msg = $("#klienMsg");
-      msg.textContent = "Mengirim…";
+      msg.textContent = "";
+      submitBtn.disabled = true;
+      openProcessingModal("Mengirim Pilihan Final", "Menyimpan pilihan Anda ke studio, mohon tunggu");
       try{
         const res = await fetch(WEBAPPURL, {
           method: "POST",
           body: JSON.stringify({ action: "submitSelection", token: auth.token, nama: auth.nama, selections })
         });
         const data = await res.json();
+        closeProcessingModal();
         if(data.ok){
           msg.textContent = "Pilihan final terkirim ke studio ✓";
-          hasSubmitted = true;
-          submitBtn.disabled = true;
-          if(btnWa){
-            const waNumber = normalizeWaNumber(auth.adminWhatsApp);
-            if(waNumber){
-              btnWa.disabled = false;
-              btnWa.title = "Kirim ringkasan pilihan ke WhatsApp admin";
-            }else{
-              btnWa.disabled = true;
-              btnWa.title = "Admin belum mengatur nomor WhatsApp.";
-            }
-          }
+          lockAfterFinalSubmit();
         }else{
           msg.textContent = "Gagal: " + (data.error || "");
+          if(data.alreadySubmitted){
+            // Server bilang sudah pernah dikirim (mis. dikirim dari tab/perangkat
+            // lain barusan) — kunci juga di sisi ini supaya sinkron.
+            lockAfterFinalSubmit();
+          }else{
+            submitBtn.disabled = false;
+          }
         }
       }catch(e){
+        closeProcessingModal();
         msg.textContent = "Gagal mengirim, cek koneksi internet.";
+        submitBtn.disabled = false;
       }
     });
 
