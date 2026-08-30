@@ -446,7 +446,7 @@
   (function authGate(){
     var auth = null;
     try{ auth = JSON.parse(localStorage.getItem("mfk_auth") || "null"); }catch(e){}
-    if(!auth || !auth.token){ location.href = "login.html"; return; }
+    if(!auth || !auth.token){ location.href = "index.html"; return; }
     window.MFK_AUTH = auth;
     if(auth.role === "klien") document.documentElement.classList.add("klien-mode-html");
   })();
