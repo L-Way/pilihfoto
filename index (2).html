@@ -1,0 +1,1509 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Meja Foto Kaone — Pengelola Foto Lokal</title>
+<style>
+  :root{
+    --bg:#faf8f3;
+    --bg-deep:#f0ece0;
+    --panel:#ffffff;
+    --panel-2:#f5f1e4;
+    --border:#e3ddc9;
+    --border-soft:rgba(33,28,13,.09);
+    --text:#211c0d;
+    --text-dim:#6b6250;
+    --text-faint:#9a917c;
+    --accent:#ffd700;
+    --accent-hover:#e6c200;
+    --accent-soft:rgba(255,215,0,.22);
+    --accent-ink:#211c0d;
+    --amber:#a8660a;
+    --amber-soft:rgba(168,102,10,.14);
+    --danger:#b3261e;
+    --ok:#2f6b3a;
+    --radius:10px;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse 900px 500px at 50% -10%, rgba(255,215,0,.10), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  /* ---------- layout shell ---------- */
+  #app{ display:flex; flex-direction:column; min-height:100vh; }
+  header.top{
+    padding:20px 28px 16px;
+    border-bottom:1px solid var(--border-soft);
+    display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+  }
+  header.top h1{
+    font-size:19px; margin:0; letter-spacing:.02em; font-weight:650;
+  }
+  header.top h1 .dot{ color:var(--accent); }
+  header.top p{ margin:0; font-size:12.5px; color:var(--text-faint); }
+  #compat-banner{
+    display:none; margin:14px 28px 0; padding:12px 16px; border-radius:var(--radius);
+    background:var(--accent-soft); border:1px solid var(--accent); color:var(--text);
+    font-size:13px; line-height:1.5;
+  }
+  main{
+    flex:1; display:grid;
+    grid-template-columns:300px 1fr 6px var(--preview-w, 340px);
+    gap:0; min-height:0;
+  }
+  @media (max-width:1100px){ main{ grid-template-columns:1fr !important; } .resizer{ display:none; } }
+
+  aside.sidebar{
+    border-right:1px solid var(--border-soft);
+    padding:18px 16px 30px;
+    overflow-y:auto;
+    background:var(--bg-deep);
+  }
+  section.center{ display:flex; flex-direction:column; min-width:0; }
+  aside.preview{
+    padding:18px 16px 30px;
+    overflow-y:auto;
+    background:var(--bg-deep);
+    min-width:0;
+  }
+  .resizer{
+    position:relative; cursor:col-resize; background:var(--border-soft);
+    transition:background .12s;
+  }
+  .resizer:hover, .resizer.dragging{ background:var(--amber); }
+  .resizer::after{
+    content:""; position:absolute; top:50%; left:50%; width:3px; height:34px;
+    transform:translate(-50%,-50%); border-left:1px dotted var(--text-faint); border-right:1px dotted var(--text-faint);
+  }
+
+  h2.section-title{
+    font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:var(--text-faint);
+    margin:22px 0 10px; font-weight:650;
+  }
+  h2.section-title:first-child{ margin-top:0; }
+
+  button{ font-family:inherit; cursor:pointer; }
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    background:var(--panel-2); color:var(--text); border:1px solid var(--border);
+    padding:9px 14px; border-radius:8px; font-size:13px; font-weight:550;
+    transition:background .12s, border-color .12s, transform .05s;
+  }
+  .btn:hover{ background:#332e36; border-color:#4a434c; }
+  .btn:active{ transform:scale(.98); }
+  .btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn.block{ width:100%; }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:700; }
+  .btn.primary:hover{ background:var(--accent-hover); border-color:var(--accent-hover); }
+  .btn.ghost{ background:transparent; }
+  .btn.small{ padding:5px 10px; font-size:12px; }
+
+  /* ---------- folder list ---------- */
+  .folder-card{
+    border:1px solid var(--border); border-radius:9px; padding:10px 11px;
+    margin-bottom:8px; background:var(--panel);
+  }
+  .folder-card .row1{ display:flex; align-items:center; gap:8px; }
+  .folder-card .name{ flex:1; min-width:0; font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .folder-card .count{ font-family:var(--mono); font-size:11px; color:var(--amber); }
+  .folder-card .row2{ display:flex; justify-content:space-between; align-items:center; margin-top:6px; }
+  .toggle-inc{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-dim); }
+  .toggle-inc input{ accent-color:var(--accent); }
+  .remove-folder{ background:none; border:none; color:var(--text-faint); font-size:11.5px; text-decoration:underline; }
+  .remove-folder:hover{ color:var(--danger); }
+  .empty-note{ font-size:12px; color:var(--text-faint); line-height:1.5; }
+  .subfolder-toggle{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-dim); margin:8px 0; }
+  .subfolder-toggle input{ accent-color:var(--accent); }
+  .folder-card .path{ font-size:10.5px; color:var(--text-faint); }
+  .frame-path{ font-size:9.5px; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* ---------- tabs ---------- */
+  .tabs{ display:flex; gap:4px; margin-bottom:12px; }
+  .tab-btn{
+    flex:1; background:var(--panel); border:1px solid var(--border); color:var(--text-dim);
+    padding:8px 6px; font-size:12px; border-radius:7px; font-weight:600;
+  }
+  .tab-btn.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--text); }
+  .tab-pane{ display:none; }
+  .tab-pane.active{ display:block; }
+
+  label.field-label{ display:block; font-size:11.5px; color:var(--text-dim); margin:10px 0 5px; }
+  input[type=text], input[type=number]{
+    width:100%; background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:8px 10px; border-radius:7px; font-size:13px; font-family:var(--mono);
+  }
+  input[type=text]:focus, input[type=number]:focus{ outline:2px solid var(--amber); outline-offset:1px; border-color:var(--amber); }
+
+  .dest-box{
+    border:1px dashed var(--border); border-radius:8px; padding:10px; font-size:12px;
+    color:var(--text-dim); font-family:var(--mono); margin-top:8px; word-break:break-all;
+  }
+  .dest-box.set{ border-style:solid; border-color:var(--ok); color:var(--text); }
+
+  .segment-row{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 4px; }
+  .segment-chip{
+    font-family:var(--mono); font-size:13px; padding:6px 11px; border-radius:6px;
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim);
+  }
+  .segment-chip.editable{ cursor:pointer; }
+  .segment-chip.editable:hover{ border-color:var(--amber); color:var(--text); }
+  .segment-chip.picked{ background:var(--amber-soft); border-color:var(--amber); color:var(--text); }
+  .segment-chip.ext{ opacity:.55; cursor:not-allowed; }
+  .segment-sep{ color:var(--text-faint); font-family:var(--mono); font-size:13px; align-self:center; }
+
+  .mode-row{ display:flex; gap:6px; margin-top:10px; }
+  .mode-row label{
+    flex:1; text-align:center; font-size:12px; padding:7px 4px; border-radius:7px;
+    border:1px solid var(--border); color:var(--text-dim); cursor:pointer;
+  }
+  .mode-row input{ display:none; }
+  .mode-row input:checked + span{ color:var(--text); }
+  .mode-row label:has(input:checked){ background:var(--accent-soft); border-color:var(--accent); }
+  .grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+
+  .log{
+    margin-top:14px; border-top:1px solid var(--border-soft); padding-top:10px;
+    max-height:190px; overflow-y:auto; font-family:var(--mono); font-size:11.3px; line-height:1.6;
+  }
+  .log-line{ color:var(--text-dim); }
+  .log-line.ok{ color:var(--ok); }
+  .log-line.err{ color:var(--danger); }
+  .log-line .t{ color:var(--text-faint); margin-right:6px; }
+
+  /* ---------- grid area ---------- */
+  .filmstrip{
+    height:13px; flex:none;
+    background-color:var(--bg-deep);
+    background-image: radial-gradient(circle at 9px 6.5px, var(--bg) 3.6px, transparent 4px);
+    background-size:22px 13px;
+    border-bottom:1px solid var(--border-soft);
+  }
+  .filmstrip.bottom{ border-top:1px solid var(--border-soft); border-bottom:none; margin-top:auto; }
+
+  .selection-bar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:12px 18px; border-bottom:1px solid var(--border-soft); background:var(--panel);
+  }
+  .counter{ font-family:var(--mono); font-size:13px; }
+  .counter b{ color:var(--amber); font-weight:700; }
+  .selection-bar .spacer{ flex:1; }
+  .range-tool{ display:flex; align-items:center; gap:6px; }
+  .range-tool input{ width:58px; padding:6px 7px; font-size:12px; }
+  .range-tool span{ color:var(--text-faint); font-size:12px; }
+
+  .size-tool{ display:flex; align-items:center; gap:7px; }
+  .size-tool span{ color:var(--text-faint); font-size:12px; white-space:nowrap; }
+  .size-tool input[type=range]{
+    width:100px; accent-color:var(--amber); cursor:pointer;
+  }
+
+  .grid-scroll{ flex:1; overflow-y:auto; padding:18px; }
+  .grid{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(var(--cell-size,128px),1fr)); gap:14px;
+  }
+  .frame{
+    position:relative; background:var(--panel); border:1px solid var(--border);
+    border-radius:8px; padding:6px; transition:border-color .12s, box-shadow .12s;
+    cursor:pointer;
+  }
+  .frame:hover{ border-color:#544c53; }
+  .frame.previewing{ border-color:var(--amber); box-shadow:0 0 0 1px var(--amber); }
+  .frame-body{
+    position:relative; aspect-ratio:1/1; border-radius:5px; overflow:hidden;
+    background:#0f0e12; display:flex; align-items:center; justify-content:center;
+  }
+  .frame-body img{ width:100%; height:100%; object-fit:contain; display:block; }
+  .raw-placeholder{ display:flex; flex-direction:column; align-items:center; gap:4px; color:var(--text-faint); }
+  .raw-placeholder .ext-badge{ font-family:var(--mono); font-weight:700; font-size:12px; color:var(--amber); border:1px solid var(--border); padding:3px 7px; border-radius:5px; }
+  .frame-index{
+    position:absolute; top:4px; left:4px; font-family:var(--mono); font-size:10px;
+    background:rgba(0,0,0,.55); color:var(--text-dim); padding:1px 5px; border-radius:4px;
+  }
+  .frame-online{
+    position:absolute; bottom:4px; left:4px; font-family:var(--mono); font-size:9.5px;
+    background:var(--accent); color:var(--accent-ink); font-weight:700;
+    padding:1px 6px; border-radius:4px;
+  }
+  .frame-name{
+    margin-top:6px; font-family:var(--mono); font-size:10.6px; color:var(--text-dim);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .mark{
+    position:absolute; top:4px; right:4px; width:20px; height:20px; border-radius:50%;
+    border:2px solid rgba(237,232,223,.55); background:rgba(0,0,0,.35);
+    z-index:2; padding:0;
+  }
+  .mark.marked{ background:var(--accent); border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+
+  .grid-empty{
+    color:var(--text-faint); font-size:13px; text-align:center; margin-top:80px; line-height:1.7;
+  }
+
+  /* ---------- preview panel ---------- */
+  .preview-frame{
+    border:1px solid var(--border); border-radius:10px; background:#0f0e12;
+    aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .preview-frame img{ max-width:100%; max-height:100%; object-fit:contain; }
+  .preview-frame .placeholder{ color:var(--text-faint); font-size:12.5px; text-align:center; padding:20px; }
+  .preview-meta{ margin-top:12px; font-family:var(--mono); font-size:12px; color:var(--text-dim); line-height:1.8; word-break:break-all; }
+  .preview-meta b{ color:var(--text); }
+
+  ::-webkit-scrollbar{ width:9px; height:9px; }
+  ::-webkit-scrollbar-thumb{ background:#d8cba0; border-radius:6px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+
+  /* ---------- landing page ---------- */
+  #landing{
+    min-height:100dvh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:32px 20px; text-align:center; gap:8px;
+  }
+  #landing .brand{ font-size:26px; font-weight:750; margin:0 0 4px; letter-spacing:.01em; }
+  #landing .brand .dot{ color:var(--accent); }
+  #landing .tagline{ margin:0 0 28px; color:var(--text-dim); font-size:14px; max-width:420px; line-height:1.6; }
+  #landing .choices{ display:grid; gap:14px; width:100%; max-width:420px; }
+  .choice-card{
+    display:flex; align-items:center; gap:14px; text-align:left;
+    background:var(--accent); border:1px solid var(--accent-hover); border-radius:14px;
+    padding:18px 18px; box-shadow:0 3px 0 var(--accent-hover);
+    transition:transform .08s, box-shadow .08s;
+  }
+  .choice-card:hover{ transform:translateY(-2px); background:var(--accent-hover); }
+  .choice-card:active{ transform:translateY(1px); box-shadow:0 1px 0 var(--accent-hover); }
+  .choice-card.limited{ background:var(--panel); border-color:var(--border); box-shadow:0 3px 0 var(--border); }
+  .choice-card.limited:hover{ background:var(--panel); }
+  .choice-card.limited .desc{ color:var(--danger); }
+  .choice-card.limited .icon{ background:var(--panel-2); color:var(--text-faint); }
+  .choice-card .icon{
+    flex:none; width:44px; height:44px; border-radius:11px; background:var(--accent-ink); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:700;
+  }
+  .choice-card .label{ font-size:15px; font-weight:700; color:var(--accent-ink); }
+  .choice-card .desc{ font-size:12.5px; color:#4a3f10; margin-top:2px; line-height:1.4; }
+  #app{ display:none; }
+  #app.visible{ display:flex; }
+  #landing.hidden{ display:none; }
+
+  .home-btn{
+    background:transparent; border:1px solid var(--border-soft); color:var(--text-dim);
+    padding:7px 11px; border-radius:8px; font-size:12.5px; font-weight:600; flex:none;
+  }
+  .home-btn:hover{ border-color:var(--border); color:var(--text); }
+  .menu-btn{ display:none; }
+
+  /* ---------- popup modal ---------- */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(20,16,4,.55); z-index:100;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-backdrop.hidden{ display:none; }
+  .modal-box{
+    background:var(--panel); border:1px solid var(--border); border-radius:14px;
+    padding:20px; width:100%; max-width:420px; box-shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  .modal-box h3{ margin:0 0 6px; font-size:16px; }
+  .modal-box p{ margin:0 0 12px; font-size:12.5px; color:var(--text-faint); line-height:1.5; }
+  .modal-actions{ display:flex; gap:8px; margin-top:14px; }
+  .modal-actions .btn{ flex:1; }
+  .modal-close{
+    position:absolute; top:10px; right:10px; background:none; border:none; color:var(--text-faint);
+    font-size:18px; line-height:1; padding:4px;
+  }
+  .modal-box{ position:relative; }
+  .sidebar-close, .preview-close{ display:none; }
+
+  /* ---------- mobile layout ---------- */
+  @media (max-width:1100px){
+    html,body{ height:100%; overflow:hidden; }
+    #app.visible{ height:100dvh; overflow:hidden; }
+    header.top{ padding:12px 14px; flex-wrap:nowrap; align-items:center; gap:10px; }
+    header.top p{ display:none; }
+    header.top h1{ font-size:16px; flex:1; }
+    .menu-btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      width:34px; height:34px; border-radius:8px; background:var(--panel-2);
+      border:1px solid var(--border); color:var(--text); font-size:16px; flex:none;
+    }
+    main{ flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+
+    aside.sidebar{
+      position:fixed; top:0; left:0; bottom:0; width:86vw; max-width:340px; z-index:60;
+      transform:translateX(-100%); transition:transform .22s ease; box-shadow:2px 0 18px rgba(0,0,0,.3);
+      padding-top:56px;
+    }
+    aside.sidebar.open{ transform:translateX(0); }
+    #sidebarBackdrop{
+      display:none; position:fixed; inset:0; background:rgba(20,16,4,.5); z-index:55;
+    }
+    #sidebarBackdrop.open{ display:block; }
+    .sidebar-close{
+      display:block; position:absolute; top:12px; right:12px; background:var(--panel-2);
+      border:1px solid var(--border); color:var(--text); width:30px; height:30px; border-radius:8px; font-size:15px;
+    }
+
+    section.center{ flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+    .selection-bar{ padding:10px 12px; gap:8px; }
+    .grid-scroll{ flex:1; min-height:0; overflow-y:auto; padding:12px; }
+
+    aside.preview{
+      position:fixed; left:0; right:0; bottom:0; z-index:70;
+      max-height:48vh; border-top:1px solid var(--border); border-radius:16px 16px 0 0;
+      box-shadow:0 -6px 20px rgba(0,0,0,.3); transform:translateY(100%);
+      transition:transform .22s ease; padding:14px 14px 20px; overflow-y:auto;
+    }
+    aside.preview.open{ transform:translateY(0); }
+    .preview-close{
+      display:block; width:100%; text-align:center; padding:4px 0 10px; color:var(--text-faint); font-size:12px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div id="landing">
+  <h1 class="brand">Meja Foto Kaone<span class="dot">.</span></h1>
+  <p class="tagline">Pilih apa yang mau dikerjakan dulu. Semua foto diproses lokal di peramban Anda, tidak diunggah ke mana pun.</p>
+  <div class="choices">
+    <button class="choice-card" id="choicePick" type="button">
+      <span class="icon">📷</span>
+      <span>
+        <div class="label">Pilih Foto</div>
+        <div class="desc">Ambil foto dari tautan folder Google Drive</div>
+      </span>
+    </button>
+    <button class="choice-card" id="choiceRename" type="button">
+      <span class="icon">✏️</span>
+      <span>
+        <div class="label">Ubah Nama</div>
+        <div class="desc">Ganti bagian nama file untuk foto yang dipilih</div>
+      </span>
+    </button>
+    <button class="choice-card" id="choiceCopyMove" type="button">
+      <span class="icon">📁</span>
+      <span>
+        <div class="label">Salin / Pindahkan Foto</div>
+        <div class="desc">Salin atau pindahkan foto ke folder tujuan</div>
+      </span>
+    </button>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="pickModal">
+  <div class="modal-box">
+    <button class="modal-close" id="pickModalClose" type="button">✕</button>
+    <h3>Tempel Tautan Folder Drive</h3>
+    <p>Folder harus dibagikan sebagai "Siapa saja yang memiliki tautan — Pemirsa". Semua foto di dalamnya (termasuk subfolder) akan dimuat ke grid.</p>
+    <label class="field-label">Tautan folder Google Drive</label>
+    <input type="text" id="pickModalInput" placeholder="https://drive.google.com/drive/folders/…" />
+    <label class="subfolder-toggle" style="margin-top:8px;">
+      <input type="checkbox" id="pickModalRecursive" checked /> Sertakan subfolder
+    </label>
+    <div class="log" id="pickModalLog"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="pickModalCancel" type="button">Batal</button>
+      <button class="btn primary" id="pickModalSubmit" type="button">Muat Foto</button>
+    </div>
+  </div>
+</div>
+
+<div id="sidebarBackdrop"></div>
+
+<div id="app">
+
+  <header class="top">
+    <button class="menu-btn" id="btnMenu" type="button" title="Buka panel">☰</button>
+    <h1>Meja Foto Kaone<span class="dot">.</span></h1>
+    <p>Salin, pindahkan, dan ubah nama foto langsung dari folder di komputer Anda — semua diproses lokal di peramban, tidak diunggah ke mana pun.</p>
+    <button class="home-btn" id="btnHome" type="button">← Beranda</button>
+  </header>
+
+  <div id="compat-banner">
+    Fitur <b>Tambah Folder lokal, Ubah Nama, dan Salin/Pindahkan foto</b> hanya bisa dibuka lewat <b>Chrome atau Edge di komputer</b> (Windows/Mac/Linux). Fitur ini <b>tidak bisa dibuka sama sekali di iPhone atau iPad</b> — apa pun browser yang dipakai di sana, termasuk Chrome atau Edge versi iPhone/iPad, karena Apple mewajibkan semua browser di iOS/iPadOS memakai mesin Safari yang belum mendukung akses folder langsung. Fitur <b>Pilih Foto lewat tautan Drive</b> tetap berfungsi normal di semua perangkat.
+  </div>
+
+  <main>
+    <!-- ===================== SIDEBAR ===================== -->
+    <aside class="sidebar">
+      <button class="sidebar-close" id="btnSidebarClose" type="button">✕</button>
+      <h2 class="section-title">Folder Sumber</h2>
+      <label class="subfolder-toggle">
+        <input type="checkbox" id="includeSubfolders" /> Sertakan subfolder saat menambah folder
+      </label>
+      <button class="btn block" id="btnAddFolder">+ Tambah Folder</button>
+      <div id="folderList" style="margin-top:12px;"></div>
+      <p class="empty-note" id="folderEmptyNote">Belum ada folder ditambahkan. Klik "Tambah Folder" lalu pilih folder berisi foto. Bisa tambah lebih dari satu folder — centang folder mana saja yang mau ditampilkan di grid. Centang "Sertakan subfolder" di atas dulu kalau foto Anda tersebar di dalam subfolder.</p>
+
+      <h2 class="section-title">Folder Google Drive (Banyak Sekaligus)</h2>
+      <p class="empty-note">Tarik semua foto dari sebuah folder Drive publik, termasuk subfoldernya. Folder harus dibagikan sebagai "Siapa saja yang memiliki tautan — Pemirsa".</p>
+      <input type="text" id="driveFolderInput" placeholder="Tempel tautan folder Google Drive" />
+      <label class="subfolder-toggle">
+        <input type="checkbox" id="driveFolderRecursive" checked /> Sertakan subfolder
+      </label>
+      <button class="btn block" id="btnAddDriveFolder">+ Tambah dari Folder Drive</button>
+      <div class="log" id="logDriveFolder"></div>
+      <div id="driveList" style="margin-top:10px;"></div>
+      <p class="empty-note">Foto dari Drive hanya bisa dilihat, dipratinjau, dan dipilih namanya — <b>tidak bisa disalin, dipindah, atau diubah nama</b> karena bukan berkas lokal di komputer Anda.</p>
+
+      <h2 class="section-title">Pilih dari Teks Salinan</h2>
+      <p class="empty-note">Tempel daftar nama file (dipisah baris baru atau koma) untuk otomatis memilihnya di grid — berguna untuk memindah/menyalin banyak foto sekaligus berdasarkan daftar.</p>
+      <textarea id="pasteText" rows="3" placeholder="IMG_1586.CR3&#10;IMG_1590.CR3" style="width:100%; background:var(--panel); border:1px solid var(--border); color:var(--text); border-radius:7px; padding:8px 10px; font-size:12.5px; font-family:var(--mono); resize:vertical;"></textarea>
+      <label class="toggle-inc" style="margin-top:6px;">
+        <input type="checkbox" id="pasteAppend" /> Tambahkan ke pilihan saat ini
+      </label>
+      <button class="btn block" id="btnSelectFromText" style="margin-top:8px;">Pilih yang Cocok</button>
+      <div class="log" id="logPaste"></div>
+
+      <h2 class="section-title">Aksi</h2>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="tabCopyMove">Salin / Pindah</button>
+        <button class="tab-btn" data-tab="tabRename">Ubah Nama</button>
+      </div>
+
+      <!-- Copy / Move pane -->
+      <div class="tab-pane active" id="tabCopyMove">
+        <button class="btn block" id="btnPickDest">Pilih Folder Tujuan</button>
+        <div class="dest-box" id="destBox">Belum ada folder tujuan dipilih.</div>
+        <div class="grid-2" style="margin-top:10px;">
+          <button class="btn primary" id="btnCopy" disabled>Salin</button>
+          <button class="btn" id="btnMove" disabled>Pindahkan</button>
+        </div>
+        <div class="log" id="logCopy"></div>
+      </div>
+
+      <!-- Rename pane -->
+      <div class="tab-pane" id="tabRename">
+        <p class="empty-note">Pilih dulu foto di grid tengah. Bagian nama file akan muncul di bawah ini (ekstensi tidak bisa diubah).</p>
+        <div class="segment-row" id="segmentRow"></div>
+
+        <div class="mode-row">
+          <label><input type="radio" name="renMode" value="text" checked><span>Teks tetap</span></label>
+          <label><input type="radio" name="renMode" value="number"><span>Nomor urut</span></label>
+        </div>
+
+        <div id="modeText">
+          <label class="field-label">Ganti bagian terpilih menjadi</label>
+          <input type="text" id="newTextValue" placeholder="mis. Liburan" />
+        </div>
+
+        <div id="modeNumber" style="display:none;">
+          <div class="grid-2">
+            <div>
+              <label class="field-label">Mulai dari</label>
+              <input type="number" id="numStart" value="1" min="0" />
+            </div>
+            <div>
+              <label class="field-label">Jumlah digit</label>
+              <input type="number" id="numDigits" value="4" min="1" max="8" />
+            </div>
+          </div>
+        </div>
+
+        <button class="btn primary block" id="btnApplyRename" style="margin-top:12px;" disabled>Terapkan ke File Terpilih</button>
+        <div class="log" id="logRename"></div>
+      </div>
+    </aside>
+
+    <!-- ===================== GRID ===================== -->
+    <section class="center">
+      <div class="filmstrip"></div>
+      <div class="selection-bar">
+        <span class="counter"><b id="selCount">0</b> dari <span id="totalCount">0</span> dipilih</span>
+        <button class="btn small" id="btnSelectAll">Pilih Semua</button>
+        <button class="btn small ghost" id="btnSelectNone">Batal Semua</button>
+        <button class="btn small ghost" id="btnCopyNames">Salin Nama Terpilih</button>
+        <div class="spacer"></div>
+        <div class="range-tool">
+          <span>#</span><input type="number" id="rangeFrom" min="1" placeholder="dari" />
+          <span>–</span><input type="number" id="rangeTo" min="1" placeholder="sampai" />
+          <button class="btn small" id="btnRange">Pilih Rentang</button>
+        </div>
+        <div class="size-tool">
+          <span>Ukuran grid</span>
+          <input type="range" id="gridSize" min="90" max="260" step="10" value="128" />
+        </div>
+      </div>
+      <div class="grid-scroll">
+        <div class="grid" id="grid"></div>
+        <p class="grid-empty" id="gridEmpty">Belum ada foto untuk ditampilkan.<br>Tambahkan folder di panel kiri untuk mulai.</p>
+      </div>
+      <div class="filmstrip bottom"></div>
+    </section>
+
+    <!-- ===================== RESIZER ===================== -->
+    <div class="resizer" id="previewResizer" title="Seret untuk mengubah lebar pratinjau"></div>
+
+    <!-- ===================== PREVIEW ===================== -->
+    <aside class="preview">
+      <button class="preview-close" id="btnPreviewClose" type="button">▾ Tutup pratinjau</button>
+      <h2 class="section-title">Pratinjau</h2>
+      <div class="preview-frame" id="previewFrame">
+        <div class="placeholder">Klik salah satu foto di grid untuk melihat pratinjau ukuran besar di sini.</div>
+      </div>
+      <button class="btn block" id="btnCopyPreviewName" style="margin-top:10px;" disabled>Salin Nama File Ini</button>
+      <div class="preview-meta" id="previewMeta"></div>
+    </aside>
+  </main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const PHOTO_EXT = new Set(["jpg","jpeg","png","gif","webp","bmp","tif","tiff","heic","heif","avif",
+                              "cr2","cr3","nef","arw","orf","rw2","raf","pef","srw","dng","x3f"]);
+
+  /** @type {{id:number, handle:any, name:string, included:boolean, files:any[]}[]} */
+  let folders = [];
+  let folderSeq = 1;
+  let photoSeq = 1;
+  /** flattened, currently displayed photos (respecting folder.included) */
+  let photos = [];
+  let previewUid = null;
+  let destHandle = null;
+  let destName = "";
+  let currentPreviewUrl = null;
+
+  const $ = (sel) => document.querySelector(sel);
+  const el = (tag, cls) => { const n = document.createElement(tag); if(cls) n.className = cls; return n; };
+
+  // ============================================================
+  // INGATAN PILIHAN PER SUMBER
+  // Menyimpan nama file yang ditandai/dipilih, dikelompokkan per sumber
+  // (folder lokal berdasarkan nama folder, atau folder Drive berdasarkan ID
+  // folder Drive-nya). Kalau sumber yang sama dibuka lagi nanti, foto yang
+  // sebelumnya dicentang otomatis tercentang lagi.
+  // ============================================================
+  function identityOf(p){
+    return (p.subPath ? p.subPath + "/" : "") + p.name;
+  }
+
+  function selectionStorageKey(sourceKey){
+    return "mejaFotoKaone.selection::" + sourceKey;
+  }
+
+  function loadSelectionSet(sourceKey){
+    try{
+      const raw = localStorage.getItem(selectionStorageKey(sourceKey));
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    }catch(_){ return new Set(); }
+  }
+
+  function applyRememberedSelection(items, sourceKey){
+    if(!sourceKey) return;
+    const remembered = loadSelectionSet(sourceKey);
+    if(!remembered.size) return;
+    items.forEach(p => {
+      if(remembered.has(identityOf(p))) p.selected = true;
+    });
+  }
+
+  function allLoadedPhotos(){
+    const arr = [];
+    folders.forEach(f => arr.push(...f.files));
+    arr.push(...driveItems);
+    return arr;
+  }
+
+  function persistSelection(){
+    const bySource = new Map();
+    allLoadedPhotos().forEach(p => {
+      if(!p.sourceKey) return;
+      if(!bySource.has(p.sourceKey)) bySource.set(p.sourceKey, []);
+      bySource.get(p.sourceKey).push(p);
+    });
+    bySource.forEach((list, sourceKey) => {
+      try{
+        const selectedIdentities = list.filter(p => p.selected).map(identityOf);
+        localStorage.setItem(selectionStorageKey(sourceKey), JSON.stringify(selectedIdentities));
+      }catch(_){}
+    });
+  }
+
+  // ---------- feature detection ----------
+  if(!("showDirectoryPicker" in window)){
+    $("#compat-banner").style.display = "block";
+    $("#btnAddFolder").disabled = true;
+    $("#btnPickDest").disabled = true;
+  }
+
+  function splitExt(filename){
+    const i = filename.lastIndexOf(".");
+    if(i <= 0) return { base: filename, ext: "" };
+    return { base: filename.slice(0, i), ext: filename.slice(i+1) };
+  }
+
+  function parseName(base){
+    if(base.includes("_")){
+      return { parts: base.split("_"), joiner: "_" };
+    }
+    const chunks = base.match(/[A-Za-z]+|[0-9]+/g);
+    if(chunks && chunks.length > 1) return { parts: chunks, joiner: "" };
+    return { parts: [base], joiner: "" };
+  }
+
+  function log(target, msg, kind){
+    const box = $(target);
+    const line = el("div", "log-line" + (kind ? " " + kind : ""));
+    const time = new Date().toLocaleTimeString("id-ID", {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+    line.innerHTML = '<span class="t">' + time + "</span>" + msg;
+    box.appendChild(line);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // ============================================================
+  // FOLDER HANDLING
+  // ============================================================
+
+  $("#btnAddFolder").addEventListener("click", async () => {
+    try{
+      const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+      const recursive = $("#includeSubfolders").checked;
+      const folder = { id: folderSeq++, handle, name: handle.name, included: true, recursive, files: [], sourceKey: "folder::" + handle.name };
+      folders.push(folder);
+      renderFolderList();
+      await scanFolder(folder);
+      renderFolderList();
+      rebuildPhotoList();
+    }catch(e){
+      if(e && e.name !== "AbortError") console.error(e);
+    }
+  });
+
+  async function scanFolder(folder){
+    const card = document.querySelector('.folder-card[data-id="'+folder.id+'"] .count');
+    let n = 0;
+    const entries = [];
+    async function walk(dirHandle, relPath){
+      for await (const entry of dirHandle.values()){
+        if(entry.kind === "file"){
+          const { base, ext } = splitExt(entry.name);
+          if(!PHOTO_EXT.has(ext.toLowerCase())) continue;
+          entries.push({ handle: entry, dirHandle, name: entry.name, base, ext, subPath: relPath });
+        }else if(entry.kind === "directory" && folder.recursive){
+          await walk(entry, relPath ? relPath + "/" + entry.name : entry.name);
+        }
+      }
+    }
+    await walk(folder.handle, "");
+    // limited concurrency thumbnail generation
+    const CONCURRENCY = 5;
+    let idx = 0;
+    async function worker(){
+      while(idx < entries.length){
+        const e = entries[idx++];
+        const photo = await buildPhotoRecord(folder, e);
+        folder.files.push(photo);
+        n++;
+        if(card) card.textContent = n + " foto";
+      }
+    }
+    await Promise.all(Array.from({length: Math.min(CONCURRENCY, entries.length)}, worker));
+    folder.files.sort((a,b) => a.name.localeCompare(b.name, "id"));
+    if(card) card.textContent = folder.files.length + " foto";
+    applyRememberedSelection(folder.files, folder.sourceKey);
+  }
+
+  async function buildPhotoRecord(folder, e){
+    const extLower = e.ext.toLowerCase();
+    const renderable = ["jpg","jpeg","png","gif","webp","bmp","avif"].includes(extLower);
+    let thumb = null, isRaw = true, size = 0;
+    try{
+      const file = await e.handle.getFile();
+      size = file.size;
+      if(renderable){
+        try{
+          const bitmap = await createImageBitmap(file);
+          // ukuran kecil + kompresi lebih tinggi supaya grid termuat lebih cepat,
+          // kualitas masih cukup bagus untuk pratinjau thumbnail
+          const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+          const maxSide = Math.round(300 * dpr);
+          const nw = bitmap.width, nh = bitmap.height;
+          const scale = Math.min(1, maxSide / Math.max(nw, nh));
+          const tw = Math.max(1, Math.round(nw * scale));
+          const th = Math.max(1, Math.round(nh * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = tw; canvas.height = th;
+          const ctx = canvas.getContext("2d");
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "medium";
+          ctx.drawImage(bitmap, 0, 0, tw, th);
+          thumb = canvas.toDataURL("image/jpeg", 0.72);
+          if(bitmap.close) bitmap.close();
+          isRaw = false;
+        }catch(_){ isRaw = true; }
+      }
+    }catch(_){ /* unreadable file, skip thumbnail */ }
+
+    return {
+      uid: photoSeq++,
+      folderId: folder.id,
+      folderName: folder.name,
+      subPath: e.subPath || "",
+      sourceKey: folder.sourceKey,
+      dirHandle: e.dirHandle,
+      fileHandle: e.handle,
+      name: e.name,
+      base: e.base,
+      ext: e.ext,
+      thumb, isRaw, size,
+      online: false,
+      selected: false
+    };
+  }
+
+  function renderFolderList(){
+    const list = $("#folderList");
+    list.innerHTML = "";
+    $("#folderEmptyNote").style.display = folders.length ? "none" : "block";
+    folders.forEach(folder => {
+      const card = el("div", "folder-card");
+      card.dataset.id = folder.id;
+      card.innerHTML = `
+        <div class="row1">
+          <div class="name" title="${folder.name}">${folder.name}</div>
+          <div class="count">${folder.files.length} foto</div>
+        </div>
+        ${folder.recursive ? '<div class="path">termasuk subfolder</div>' : ''}
+        <div class="row2">
+          <label class="toggle-inc">
+            <input type="checkbox" ${folder.included ? "checked" : ""} data-role="include" />
+            Tampilkan di grid
+          </label>
+          <button class="remove-folder" data-role="remove">Hapus dari daftar</button>
+        </div>`;
+      card.querySelector('[data-role="include"]').addEventListener("change", (ev) => {
+        folder.included = ev.target.checked;
+        rebuildPhotoList();
+      });
+      card.querySelector('[data-role="remove"]').addEventListener("click", () => {
+        folders = folders.filter(f => f.id !== folder.id);
+        renderFolderList();
+        rebuildPhotoList();
+      });
+      list.appendChild(card);
+    });
+  }
+
+  // ============================================================
+  // FOTO DARI TAUTAN (Google Drive / gambar online)
+  // ============================================================
+  let driveItems = [];
+  let driveSeq = 1;
+
+  function driveThumbCandidatesById(driveId){
+    return [
+      "https://drive.google.com/thumbnail?id=" + driveId + "&sz=w1600",
+      "https://lh3.googleusercontent.com/d/" + driveId + "=w1600",
+      "https://drive.google.com/uc?export=view&id=" + driveId
+    ];
+  }
+
+  function guessExtFromUrl(url){
+    const m = url.split("?")[0].match(/\.([a-zA-Z0-9]{2,5})$/);
+    return m ? m[1].toLowerCase() : "jpg";
+  }
+
+  function renderDriveList(){
+    const list = $("#driveList");
+    list.innerHTML = "";
+    if(!driveItems.length) return;
+
+    const row = el("div", "folder-card");
+    row.innerHTML = `
+      <div class="row1">
+        <div class="name">${driveItems.length} foto dari folder Drive</div>
+      </div>
+      <div class="row2">
+        <span></span>
+        <button class="remove-folder" data-role="removeAll">Hapus Semua</button>
+      </div>`;
+    row.querySelector('[data-role="removeAll"]').addEventListener("click", () => {
+      driveItems = [];
+      renderDriveList();
+      rebuildPhotoList();
+    });
+    list.appendChild(row);
+  }
+
+  // ============================================================
+  // FOLDER GOOGLE DRIVE (banyak foto sekaligus, termasuk subfolder)
+  // ============================================================
+
+  // API Key milik proyek Google Cloud Anda sendiri (Application restrictions: None,
+  // agar tetap berfungsi baik dibuka lewat hosting maupun langsung sebagai file lokal).
+  // Dibatasi hanya untuk Google Drive API di sisi "API restrictions".
+  const DRIVE_API_KEY = "AIzaSyDZ3Yq9SfhnaR_ue7MDra6iLHsvfa74L34";
+
+  function extractDriveFolderId(input){
+    const raw = input.trim();
+    let m = raw.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
+    if(m) return m[1];
+    m = raw.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+    if(m) return m[1];
+    if(/^[a-zA-Z0-9_-]{10,}$/.test(raw)) return raw; // sudah berupa ID folder
+    return null;
+  }
+
+  async function driveApiListChildren(folderId, apiKey, pageToken){
+    const params = new URLSearchParams({
+      q: "'" + folderId + "' in parents and trashed = false",
+      fields: "nextPageToken, files(id,name,mimeType)",
+      pageSize: "1000",
+      key: apiKey
+    });
+    if(pageToken) params.set("pageToken", pageToken);
+    const res = await fetch("https://www.googleapis.com/drive/v3/files?" + params.toString());
+    if(!res.ok){
+      let msg = "HTTP " + res.status;
+      try{ const body = await res.json(); if(body?.error?.message) msg = body.error.message; }catch(_){}
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+
+  async function walkDriveFolder(folderId, apiKey, recursive, relPath, out, onFolderSeen){
+    let pageToken;
+    do{
+      const data = await driveApiListChildren(folderId, apiKey, pageToken);
+      for(const f of (data.files || [])){
+        if(f.mimeType === "application/vnd.google-apps.folder"){
+          if(onFolderSeen) onFolderSeen();
+          if(recursive){
+            await walkDriveFolder(f.id, apiKey, recursive, relPath ? relPath + "/" + f.name : f.name, out, onFolderSeen);
+          }
+        }else if(f.mimeType && f.mimeType.indexOf("image/") === 0){
+          out.push({ id: f.id, name: f.name, relPath });
+        }
+      }
+      pageToken = data.nextPageToken;
+    }while(pageToken);
+  }
+
+  async function addDriveFolderFromLink(link, recursive, logTarget){
+    const apiKey = DRIVE_API_KEY;
+    link = (link || "").trim();
+    if(!link){ log(logTarget, "Tempel dulu tautan folder Drive-nya.", "err"); return false; }
+    const folderId = extractDriveFolderId(link);
+    if(!folderId){ log(logTarget, "Tautan folder tidak dikenali.", "err"); return false; }
+
+    log(logTarget, "Membaca folder Drive" + (recursive ? " (termasuk subfolder)" : "") + "…");
+    try{
+      const found = [];
+      let subfolderCount = 0;
+      await walkDriveFolder(folderId, apiKey, recursive, "", found, () => subfolderCount++);
+
+      if(!found.length){
+        log(logTarget, "Tidak ada foto ditemukan. Pastikan folder dibagikan sebagai \"Siapa saja yang memiliki tautan — Pemirsa\".", "err");
+        return false;
+      }
+      const sourceKey = "drive::" + folderId;
+      const newItems = [];
+      found.forEach(f => {
+        const { base, ext } = splitExt(f.name);
+        const candidates = driveThumbCandidatesById(f.id);
+        const item = {
+          uid: photoSeq++,
+          driveItemId: driveSeq++,
+          folderName: "Drive",
+          subPath: f.relPath,
+          sourceKey,
+          dirHandle: null,
+          fileHandle: null,
+          name: f.name, base, ext: ext || guessExtFromUrl(f.name),
+          driveId: f.id,
+          urlCandidates: candidates,
+          urlIndex: 0,
+          thumb: candidates[0],
+          url: candidates[0],
+          isRaw: false,
+          size: 0,
+          online: true,
+          selected: false
+        };
+        driveItems.push(item);
+        newItems.push(item);
+      });
+      applyRememberedSelection(newItems, sourceKey);
+      renderDriveList();
+      rebuildPhotoList();
+      log(logTarget, found.length + " foto ditambahkan" + (subfolderCount ? " dari " + (subfolderCount+1) + " folder" : "") + ".", "ok");
+      return true;
+    }catch(e){
+      log(logTarget, "Gagal: " + (e.message || e) + ". Pastikan folder dibagikan publik, dan Google Drive API sudah aktif di Google Cloud Console.", "err");
+      return false;
+    }
+  }
+
+  $("#btnAddDriveFolder").addEventListener("click", async () => {
+    const btn = $("#btnAddDriveFolder");
+    btn.disabled = true;
+    await addDriveFolderFromLink($("#driveFolderInput").value, $("#driveFolderRecursive").checked, "#logDriveFolder");
+    btn.disabled = false;
+  });
+
+  // ============================================================
+  // GRID / SELECTION
+  // ============================================================
+
+  function rebuildPhotoList(){
+    photos = [];
+    folders.filter(f => f.included).forEach(f => photos.push(...f.files));
+    photos.push(...driveItems);
+    renderGrid();
+    updateCounter();
+    refreshSegmentUI();
+  }
+
+  function renderGrid(){
+    const grid = $("#grid");
+    grid.innerHTML = "";
+    $("#gridEmpty").style.display = photos.length ? "none" : "block";
+    photos.forEach((p, i) => {
+      const frame = el("div", "frame" + (p.uid === previewUid ? " previewing" : ""));
+      frame.dataset.uid = p.uid;
+
+      const mark = el("button", "mark" + (p.selected ? " marked" : ""));
+      mark.type = "button";
+      mark.title = "Tandai/pilih foto ini";
+      mark.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        p.selected = !p.selected;
+        mark.classList.toggle("marked", p.selected);
+        updateCounter();
+        refreshSegmentUI();
+        persistSelection();
+      });
+
+      const body = el("div", "frame-body");
+      if(p.thumb){
+        const img = el("img");
+        img.src = p.thumb;
+        img.loading = "lazy";
+        img.decoding = "async";
+        img.referrerPolicy = "no-referrer";
+        if(p.online && p.urlCandidates){
+          img.addEventListener("error", () => {
+            if(p.urlIndex < p.urlCandidates.length - 1){
+              p.urlIndex++;
+              p.thumb = p.urlCandidates[p.urlIndex];
+              img.src = p.thumb;
+            }else{
+              body.innerHTML = '<div class="raw-placeholder"><span class="ext-badge">!</span><span>Gagal memuat gambar</span></div>';
+            }
+          }, { once: false });
+        }
+        body.appendChild(img);
+      }else{
+        const ph = el("div", "raw-placeholder");
+        ph.innerHTML = '<span class="ext-badge">.'+p.ext.toUpperCase()+'</span><span>tanpa pratinjau</span>';
+        body.appendChild(ph);
+      }
+      const badge = el("span", "frame-index");
+      badge.textContent = "#" + (i+1);
+      body.appendChild(badge);
+      if(p.online){
+        const onlineBadge = el("span", "frame-online");
+        onlineBadge.textContent = "Drive";
+        body.appendChild(onlineBadge);
+      }
+
+      const nameEl = el("div", "frame-name");
+      nameEl.textContent = p.name;
+      nameEl.title = p.subPath ? p.subPath + "/" + p.name : p.name;
+
+      frame.appendChild(mark);
+      frame.appendChild(body);
+      frame.appendChild(nameEl);
+      if(p.subPath){
+        const pathEl = el("div", "frame-path");
+        pathEl.textContent = p.subPath;
+        pathEl.title = p.subPath;
+        frame.appendChild(pathEl);
+      }
+
+      frame.addEventListener("click", (ev) => {
+        if(ev.target.closest(".mark")) return;
+        setPreview(p.uid);
+      });
+
+      grid.appendChild(frame);
+    });
+  }
+
+  function updateCounter(){
+    const sel = photos.filter(p => p.selected).length;
+    $("#selCount").textContent = sel;
+    $("#totalCount").textContent = photos.length;
+    const hasDest = !!destHandle;
+    $("#btnCopy").disabled = !(sel && hasDest);
+    $("#btnMove").disabled = !(sel && hasDest);
+  }
+
+  $("#btnSelectAll").addEventListener("click", () => {
+    photos.forEach(p => p.selected = true);
+    renderGrid(); updateCounter(); refreshSegmentUI(); persistSelection();
+  });
+  $("#btnSelectNone").addEventListener("click", () => {
+    photos.forEach(p => p.selected = false);
+    renderGrid(); updateCounter(); refreshSegmentUI(); persistSelection();
+  });
+  $("#btnRange").addEventListener("click", () => {
+    const from = parseInt($("#rangeFrom").value, 10);
+    const to = parseInt($("#rangeTo").value, 10);
+    if(!from || !to || from < 1 || to < from) return;
+    photos.forEach((p, i) => { p.selected = (i+1 >= from && i+1 <= to); });
+    renderGrid(); updateCounter(); refreshSegmentUI(); persistSelection();
+  });
+
+  async function setPreview(uid){
+    previewUid = uid;
+    document.querySelectorAll(".frame").forEach(f => {
+      f.classList.toggle("previewing", Number(f.dataset.uid) === uid);
+    });
+    const p = photos.find(x => x.uid === uid);
+    if(!p) return;
+    const frameBox = $("#previewFrame");
+    const metaBox = $("#previewMeta");
+    $("#btnCopyPreviewName").disabled = false;
+    frameBox.innerHTML = '<div class="placeholder">Memuat pratinjau…</div>';
+
+    if(p.online){
+      if(currentPreviewUrl){ URL.revokeObjectURL(currentPreviewUrl); currentPreviewUrl = null; }
+      frameBox.innerHTML = "";
+      const img = el("img");
+      img.referrerPolicy = "no-referrer";
+      let previewIdx = 0;
+      const candidates = p.urlCandidates || [p.url];
+      img.src = candidates[previewIdx];
+      img.onerror = () => {
+        if(previewIdx < candidates.length - 1){
+          previewIdx++;
+          img.src = candidates[previewIdx];
+        }else{
+          frameBox.innerHTML = '<div class="placeholder">Gambar tidak bisa dimuat. Pastikan tautan/folder bersifat publik ("siapa saja yang memiliki tautan — Pemirsa").</div>';
+        }
+      };
+      frameBox.appendChild(img);
+      metaBox.innerHTML =
+        "<div><b>Nama:</b> " + p.name + "</div>" +
+        "<div><b>Sumber:</b> Folder Drive" + (p.subPath ? " / " + p.subPath : "") + " (bukan berkas lokal)</div>";
+      return;
+    }
+
+    try{
+      const file = await p.fileHandle.getFile();
+      if(currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
+      if(p.isRaw){
+        frameBox.innerHTML = '<div class="placeholder">Berkas <b>.'+p.ext.toUpperCase()+'</b> tidak dapat ditampilkan langsung oleh peramban (format RAW). Nama dan info berkas tetap tersedia di bawah.</div>';
+        currentPreviewUrl = null;
+      }else{
+        currentPreviewUrl = URL.createObjectURL(file);
+        frameBox.innerHTML = "";
+        const img = el("img");
+        img.src = currentPreviewUrl;
+        frameBox.appendChild(img);
+      }
+      metaBox.innerHTML =
+        "<div><b>Nama:</b> " + p.name + "</div>" +
+        "<div><b>Folder:</b> " + p.folderName + (p.subPath ? " / " + p.subPath : "") + "</div>" +
+        "<div><b>Ukuran:</b> " + formatSize(p.size) + "</div>";
+    }catch(e){
+      frameBox.innerHTML = '<div class="placeholder">Gagal memuat berkas ini.</div>';
+    }
+  }
+
+  async function copyTextToClipboard(text){
+    try{
+      await navigator.clipboard.writeText(text);
+      return true;
+    }catch(_){ return false; }
+  }
+
+  $("#btnCopyPreviewName").addEventListener("click", async () => {
+    const p = photos.find(x => x.uid === previewUid);
+    if(!p) return;
+    const ok = await copyTextToClipboard(p.name);
+    const btn = $("#btnCopyPreviewName");
+    const original = btn.textContent;
+    btn.textContent = ok ? "Nama Disalin ✓" : "Gagal menyalin";
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
+
+  $("#btnCopyNames").addEventListener("click", async () => {
+    const names = photos.filter(p => p.selected).map(p => p.name);
+    const btn = $("#btnCopyNames");
+    const original = btn.textContent;
+    if(!names.length){
+      btn.textContent = "Belum ada yang dipilih";
+      setTimeout(() => { btn.textContent = original; }, 1500);
+      return;
+    }
+    const ok = await copyTextToClipboard(names.join("\n"));
+    btn.textContent = ok ? names.length + " Nama Disalin ✓" : "Gagal menyalin";
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
+
+  $("#btnSelectFromText").addEventListener("click", () => {
+    const raw = $("#pasteText").value;
+    const tokens = raw.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+    if(!tokens.length){
+      log("#logPaste", "Tempel dulu daftar nama filenya.", "err");
+      return;
+    }
+    const append = $("#pasteAppend").checked;
+    if(!append) photos.forEach(p => p.selected = false);
+    const tokensLower = tokens.map(t => t.toLowerCase());
+    let matched = 0;
+    photos.forEach(p => {
+      const nameLower = p.name.toLowerCase();
+      const baseLower = p.base.toLowerCase();
+      const isMatch = tokensLower.some(t => t === nameLower || t === baseLower || nameLower.includes(t));
+      if(isMatch){ p.selected = true; matched++; }
+    });
+    renderGrid(); updateCounter(); refreshSegmentUI(); persistSelection();
+    log("#logPaste", matched + " dari " + tokens.length + " teks cocok dan dipilih.", matched ? "ok" : "err");
+  });
+
+  function formatSize(bytes){
+    if(!bytes) return "-";
+    const units = ["B","KB","MB","GB"];
+    let i = 0, v = bytes;
+    while(v >= 1024 && i < units.length-1){ v /= 1024; i++; }
+    return v.toFixed(v < 10 && i > 0 ? 1 : 0) + " " + units[i];
+  }
+
+  // ============================================================
+  // TABS
+  // ============================================================
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      $("#" + btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  // ============================================================
+  // COPY / MOVE
+  // ============================================================
+  $("#btnPickDest").addEventListener("click", async () => {
+    try{
+      destHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+      destName = destHandle.name;
+      const box = $("#destBox");
+      box.textContent = "Tujuan: " + destName;
+      box.classList.add("set");
+      updateCounter();
+    }catch(e){ if(e && e.name !== "AbortError") console.error(e); }
+  });
+
+  async function runCopyOrMove(isMove){
+    const allSelected = photos.filter(p => p.selected);
+    const selected = allSelected.filter(p => !p.online);
+    const onlineSkipped = allSelected.length - selected.length;
+    if(!allSelected.length || !destHandle) return;
+    $("#btnCopy").disabled = true; $("#btnMove").disabled = true;
+    if(onlineSkipped){
+      log("#logCopy", onlineSkipped + " foto dari tautan dilewati (bukan berkas lokal).", "err");
+    }
+    log("#logCopy", (isMove ? "Memindahkan " : "Menyalin ") + selected.length + " berkas ke <b>"+destName+"</b>…");
+    let ok = 0, fail = 0;
+    for(const p of selected){
+      try{
+        const file = await p.fileHandle.getFile();
+        const newHandle = await destHandle.getFileHandle(p.name, { create: true });
+        const writable = await newHandle.createWritable();
+        await writable.write(file);
+        await writable.close();
+        if(isMove){
+          await p.dirHandle.removeEntry(p.name);
+          const folder = folders.find(f => f.id === p.folderId);
+          if(folder) folder.files = folder.files.filter(x => x.uid !== p.uid);
+        }
+        ok++;
+        log("#logCopy", p.name + " berhasil.", "ok");
+      }catch(e){
+        fail++;
+        log("#logCopy", p.name + " gagal: " + (e.message || e), "err");
+      }
+    }
+    log("#logCopy", "Selesai — " + ok + " berhasil, " + fail + " gagal.");
+    if(isMove){ rebuildPhotoList(); renderFolderList(); }
+    updateCounter();
+  }
+  $("#btnCopy").addEventListener("click", () => runCopyOrMove(false));
+  $("#btnMove").addEventListener("click", () => runCopyOrMove(true));
+
+  // ============================================================
+  // RENAME
+  // ============================================================
+  let pickedSegmentIndex = null;
+
+  document.querySelectorAll('input[name="renMode"]').forEach(r => {
+    r.addEventListener("change", () => {
+      const isNumber = $('input[name="renMode"]:checked').value === "number";
+      $("#modeText").style.display = isNumber ? "none" : "block";
+      $("#modeNumber").style.display = isNumber ? "block" : "none";
+    });
+  });
+
+  function refreshSegmentUI(){
+    const selected = photos.filter(p => p.selected);
+    const row = $("#segmentRow");
+    row.innerHTML = "";
+    if(!selected.length){
+      pickedSegmentIndex = null;
+      $("#btnApplyRename").disabled = true;
+      return;
+    }
+    const ref = parseName(selected[0].base);
+    ref.parts.forEach((part, i) => {
+      if(i > 0 && ref.joiner) {
+        const sep = el("span", "segment-sep");
+        sep.textContent = ref.joiner;
+        row.appendChild(sep);
+      }
+      const chip = el("span", "segment-chip editable" + (pickedSegmentIndex === i ? " picked" : ""));
+      chip.textContent = part;
+      chip.addEventListener("click", () => {
+        pickedSegmentIndex = i;
+        refreshSegmentUI();
+      });
+      row.appendChild(chip);
+    });
+    if(selected[0].ext){
+      const extChip = el("span", "segment-chip ext");
+      extChip.textContent = "." + selected[0].ext;
+      row.appendChild(extChip);
+    }
+    $("#btnApplyRename").disabled = pickedSegmentIndex === null;
+  }
+
+  $("#btnApplyRename").addEventListener("click", async () => {
+    if(pickedSegmentIndex === null) return;
+    const allSelected = photos.filter(p => p.selected)
+      .slice()
+      .sort((a,b) => photos.indexOf(a) - photos.indexOf(b));
+    const selected = allSelected.filter(p => !p.online);
+    const onlineSkipped = allSelected.length - selected.length;
+    const mode = $('input[name="renMode"]:checked').value;
+    const newText = $("#newTextValue").value;
+    let counter = parseInt($("#numStart").value, 10) || 0;
+    const digits = Math.max(1, parseInt($("#numDigits").value, 10) || 4);
+
+    if(onlineSkipped){
+      log("#logRename", onlineSkipped + " foto dari tautan dilewati (bukan berkas lokal).", "err");
+    }
+    log("#logRename", "Mengubah nama " + selected.length + " berkas…");
+    let ok = 0, fail = 0, skip = 0;
+
+    for(const p of selected){
+      try{
+        const parsed = parseName(p.base);
+        if(pickedSegmentIndex >= parsed.parts.length){
+          skip++;
+          log("#logRename", p.name + " dilewati (pola nama berbeda).", "err");
+          continue;
+        }
+        const parts = parsed.parts.slice();
+        if(mode === "text"){
+          parts[pickedSegmentIndex] = newText;
+        }else{
+          parts[pickedSegmentIndex] = String(counter).padStart(digits, "0");
+          counter++;
+        }
+        const newBase = parts.join(parsed.joiner);
+        const newName = p.ext ? newBase + "." + p.ext : newBase;
+
+        if(newName === p.name){ skip++; continue; }
+
+        // cek nama sudah dipakai?
+        let exists = false;
+        try{ await p.dirHandle.getFileHandle(newName); exists = true; }catch(_){ exists = false; }
+        if(exists){
+          skip++;
+          log("#logRename", newName + " sudah ada, dilewati.", "err");
+          continue;
+        }
+
+        const file = await p.fileHandle.getFile();
+        const newHandle = await p.dirHandle.getFileHandle(newName, { create: true });
+        const writable = await newHandle.createWritable();
+        await writable.write(file);
+        await writable.close();
+        await p.dirHandle.removeEntry(p.name);
+
+        p.fileHandle = newHandle;
+        p.name = newName;
+        p.base = newBase;
+
+        ok++;
+        log("#logRename", "→ " + newName, "ok");
+      }catch(e){
+        fail++;
+        log("#logRename", p.name + " gagal: " + (e.message || e), "err");
+      }
+    }
+    log("#logRename", "Selesai — " + ok + " berhasil, " + skip + " dilewati, " + fail + " gagal.");
+    renderGrid();
+    refreshSegmentUI();
+  });
+
+  // ============================================================
+  // UKURAN GRID
+  // ============================================================
+  $("#gridSize").addEventListener("input", (ev) => {
+    $("#grid").style.setProperty("--cell-size", ev.target.value + "px");
+  });
+
+  // ============================================================
+  // RESIZER PANEL PRATINJAU
+  // ============================================================
+  (function initResizer(){
+    const handle = $("#previewResizer");
+    let dragging = false, startX = 0, startWidth = 0;
+
+    function currentPreviewWidth(){
+      const raw = getComputedStyle(document.documentElement).getPropertyValue("--preview-w").trim();
+      const n = parseInt(raw, 10);
+      return n || $("aside.preview").getBoundingClientRect().width || 340;
+    }
+
+    handle.addEventListener("mousedown", (ev) => {
+      if(window.innerWidth <= 1100) return; // panel ditumpuk di layar sempit, resizer nonaktif
+      dragging = true;
+      startX = ev.clientX;
+      startWidth = currentPreviewWidth();
+      handle.classList.add("dragging");
+      document.body.style.userSelect = "none";
+      ev.preventDefault();
+    });
+
+    window.addEventListener("mousemove", (ev) => {
+      if(!dragging) return;
+      const delta = startX - ev.clientX; // seret ke kiri = panel makin lebar
+      let newWidth = startWidth + delta;
+      newWidth = Math.max(260, Math.min(newWidth, Math.round(window.innerWidth * 0.6)));
+      document.documentElement.style.setProperty("--preview-w", newWidth + "px");
+    });
+
+    window.addEventListener("mouseup", () => {
+      if(!dragging) return;
+      dragging = false;
+      handle.classList.remove("dragging");
+      document.body.style.userSelect = "";
+    });
+  })();
+
+  // ============================================================
+  // HALAMAN AWAL (LANDING) & POPUP PILIH FOTO
+  // ============================================================
+  function isMobileLayout(){ return window.innerWidth <= 1100; }
+
+  const FS_SUPPORTED = "showDirectoryPicker" in window;
+  const IS_IOS_DEVICE = /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+                         (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS menyamar sbg Mac
+  if(!FS_SUPPORTED){
+    ["#choiceRename", "#choiceCopyMove"].forEach(sel => {
+      const card = $(sel);
+      card.classList.add("limited");
+      card.querySelector(".desc").textContent = IS_IOS_DEVICE
+        ? "Tidak bisa dibuka di iPhone/iPad (apa pun browsernya) — perlu Chrome/Edge di komputer (Windows/Mac/Linux)."
+        : "Perlu Google Chrome atau Microsoft Edge — belum didukung di peramban ini.";
+    });
+  }
+
+  function showApp(){
+    $("#landing").classList.add("hidden");
+    $("#app").classList.add("visible");
+  }
+  function showLanding(){
+    $("#app").classList.remove("visible");
+    $("#landing").classList.remove("hidden");
+    closeSidebar();
+    closeMobilePreview();
+  }
+
+  $("#btnHome").addEventListener("click", showLanding);
+
+  $("#choiceRename").addEventListener("click", () => {
+    showApp();
+    document.querySelector('.tab-btn[data-tab="tabRename"]').click();
+    if(isMobileLayout()) openSidebar();
+  });
+  $("#choiceCopyMove").addEventListener("click", () => {
+    showApp();
+    document.querySelector('.tab-btn[data-tab="tabCopyMove"]').click();
+    if(isMobileLayout()) openSidebar();
+  });
+
+  function openPickModal(){
+    $("#pickModalLog").innerHTML = "";
+    $("#pickModalInput").value = "";
+    $("#pickModal").classList.remove("hidden");
+    $("#pickModalInput").focus();
+  }
+  function closePickModal(){ $("#pickModal").classList.add("hidden"); }
+
+  $("#choicePick").addEventListener("click", openPickModal);
+  $("#pickModalClose").addEventListener("click", closePickModal);
+  $("#pickModalCancel").addEventListener("click", closePickModal);
+  $("#pickModal").addEventListener("click", (ev) => { if(ev.target.id === "pickModal") closePickModal(); });
+
+  $("#pickModalSubmit").addEventListener("click", async () => {
+    const btn = $("#pickModalSubmit");
+    btn.disabled = true;
+    const ok = await addDriveFolderFromLink(
+      $("#pickModalInput").value,
+      $("#pickModalRecursive").checked,
+      "#pickModalLog"
+    );
+    btn.disabled = false;
+    if(ok){
+      setTimeout(() => { closePickModal(); showApp(); }, 400);
+    }
+  });
+
+  // ============================================================
+  // PANEL SAMPING & PRATINJAU DI HP
+  // ============================================================
+  function openSidebar(){
+    $("aside.sidebar").classList.add("open");
+    $("#sidebarBackdrop").classList.add("open");
+  }
+  function closeSidebar(){
+    $("aside.sidebar").classList.remove("open");
+    $("#sidebarBackdrop").classList.remove("open");
+  }
+  $("#btnMenu").addEventListener("click", openSidebar);
+  $("#btnSidebarClose").addEventListener("click", closeSidebar);
+  $("#sidebarBackdrop").addEventListener("click", closeSidebar);
+
+  function openMobilePreview(){ $("aside.preview").classList.add("open"); }
+  function closeMobilePreview(){ $("aside.preview").classList.remove("open"); }
+  $("#btnPreviewClose").addEventListener("click", closeMobilePreview);
+
+  // buka panel pratinjau di bagian bawah layar HP begitu sebuah foto diklik,
+  // tanpa ikut menggeser posisi scroll grid
+  const _origSetPreview = setPreview;
+  setPreview = async function(uid){
+    await _origSetPreview(uid);
+    if(isMobileLayout()) openMobilePreview();
+  };
+
+  // init
+  rebuildPhotoList();
+})();
+</script>
+</body>
+</html>
