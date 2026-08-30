@@ -121,6 +121,10 @@
   .remove-folder{ background:none; border:none; color:var(--text-faint); font-size:11.5px; text-decoration:underline; }
   .remove-folder:hover{ color:var(--danger); }
   .empty-note{ font-size:12px; color:var(--text-faint); line-height:1.5; }
+  .subfolder-toggle{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-dim); margin:8px 0; }
+  .subfolder-toggle input{ accent-color:var(--accent); }
+  .folder-card .path{ font-size:10.5px; color:var(--text-faint); }
+  .frame-path{ font-size:9.5px; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
   /* ---------- tabs ---------- */
   .tabs{ display:flex; gap:4px; margin-bottom:12px; }
@@ -275,16 +279,23 @@
     <!-- ===================== SIDEBAR ===================== -->
     <aside class="sidebar">
       <h2 class="section-title">Folder Sumber</h2>
+      <label class="subfolder-toggle">
+        <input type="checkbox" id="includeSubfolders" /> Sertakan subfolder saat menambah folder
+      </label>
       <button class="btn block" id="btnAddFolder">+ Tambah Folder</button>
       <div id="folderList" style="margin-top:12px;"></div>
-      <p class="empty-note" id="folderEmptyNote">Belum ada folder ditambahkan. Klik "Tambah Folder" lalu pilih folder berisi foto. Bisa tambah lebih dari satu folder — centang folder mana saja yang mau ditampilkan di grid.</p>
+      <p class="empty-note" id="folderEmptyNote">Belum ada folder ditambahkan. Klik "Tambah Folder" lalu pilih folder berisi foto. Bisa tambah lebih dari satu folder — centang folder mana saja yang mau ditampilkan di grid. Centang "Sertakan subfolder" di atas dulu kalau foto Anda tersebar di dalam subfolder.</p>
 
-      <h2 class="section-title">Foto dari Tautan</h2>
-      <input type="text" id="driveNameInput" placeholder="Nama tampilan (opsional)" style="margin-bottom:6px;" />
-      <input type="text" id="driveLinkInput" placeholder="Tempel tautan Google Drive / gambar" />
-      <button class="btn block" id="btnAddDriveLink" style="margin-top:8px;">+ Tambah dari Tautan</button>
+      <h2 class="section-title">Folder Google Drive (Banyak Sekaligus)</h2>
+      <p class="empty-note">Tarik semua foto dari sebuah folder Drive publik, termasuk subfoldernya. Folder harus dibagikan sebagai "Siapa saja yang memiliki tautan — Pemirsa".</p>
+      <input type="text" id="driveFolderInput" placeholder="Tempel tautan folder Google Drive" />
+      <label class="subfolder-toggle">
+        <input type="checkbox" id="driveFolderRecursive" checked /> Sertakan subfolder
+      </label>
+      <button class="btn block" id="btnAddDriveFolder">+ Tambah dari Folder Drive</button>
+      <div class="log" id="logDriveFolder"></div>
       <div id="driveList" style="margin-top:10px;"></div>
-      <p class="empty-note">Foto dari tautan hanya bisa dilihat, dipratinjau, dan dipilih namanya — <b>tidak bisa disalin, dipindah, atau diubah nama</b> karena bukan berkas lokal di komputer Anda.</p>
+      <p class="empty-note">Foto dari Drive hanya bisa dilihat, dipratinjau, dan dipilih namanya — <b>tidak bisa disalin, dipindah, atau diubah nama</b> karena bukan berkas lokal di komputer Anda.</p>
 
       <h2 class="section-title">Pilih dari Teks Salinan</h2>
       <p class="empty-note">Tempel daftar nama file (dipisah baris baru atau koma) untuk otomatis memilihnya di grid — berguna untuk memindah/menyalin banyak foto sekaligus berdasarkan daftar.</p>
@@ -407,6 +418,59 @@
   const $ = (sel) => document.querySelector(sel);
   const el = (tag, cls) => { const n = document.createElement(tag); if(cls) n.className = cls; return n; };
 
+  // ============================================================
+  // INGATAN PILIHAN PER SUMBER
+  // Menyimpan nama file yang ditandai/dipilih, dikelompokkan per sumber
+  // (folder lokal berdasarkan nama folder, atau folder Drive berdasarkan ID
+  // folder Drive-nya). Kalau sumber yang sama dibuka lagi nanti, foto yang
+  // sebelumnya dicentang otomatis tercentang lagi.
+  // ============================================================
+  function identityOf(p){
+    return (p.subPath ? p.subPath + "/" : "") + p.name;
+  }
+
+  function selectionStorageKey(sourceKey){
+    return "mejaFotoKaone.selection::" + sourceKey;
+  }
+
+  function loadSelectionSet(sourceKey){
+    try{
+      const raw = localStorage.getItem(selectionStorageKey(sourceKey));
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    }catch(_){ return new Set(); }
+  }
+
+  function applyRememberedSelection(items, sourceKey){
+    if(!sourceKey) return;
+    const remembered = loadSelectionSet(sourceKey);
+    if(!remembered.size) return;
+    items.forEach(p => {
+      if(remembered.has(identityOf(p))) p.selected = true;
+    });
+  }
+
+  function allLoadedPhotos(){
+    const arr = [];
+    folders.forEach(f => arr.push(...f.files));
+    arr.push(...driveItems);
+    return arr;
+  }
+
+  function persistSelection(){
+    const bySource = new Map();
+    allLoadedPhotos().forEach(p => {
+      if(!p.sourceKey) return;
+      if(!bySource.has(p.sourceKey)) bySource.set(p.sourceKey, []);
+      bySource.get(p.sourceKey).push(p);
+    });
+    bySource.forEach((list, sourceKey) => {
+      try{
+        const selectedIdentities = list.filter(p => p.selected).map(identityOf);
+        localStorage.setItem(selectionStorageKey(sourceKey), JSON.stringify(selectedIdentities));
+      }catch(_){}
+    });
+  }
+
   // ---------- feature detection ----------
   if(!("showDirectoryPicker" in window)){
     $("#compat-banner").style.display = "block";
@@ -445,10 +509,12 @@
   $("#btnAddFolder").addEventListener("click", async () => {
     try{
       const handle = await window.showDirectoryPicker({ mode: "readwrite" });
-      const folder = { id: folderSeq++, handle, name: handle.name, included: true, files: [] };
+      const recursive = $("#includeSubfolders").checked;
+      const folder = { id: folderSeq++, handle, name: handle.name, included: true, recursive, files: [], sourceKey: "folder::" + handle.name };
       folders.push(folder);
       renderFolderList();
       await scanFolder(folder);
+      renderFolderList();
       rebuildPhotoList();
     }catch(e){
       if(e && e.name !== "AbortError") console.error(e);
@@ -459,12 +525,18 @@
     const card = document.querySelector('.folder-card[data-id="'+folder.id+'"] .count');
     let n = 0;
     const entries = [];
-    for await (const entry of folder.handle.values()){
-      if(entry.kind !== "file") continue;
-      const { base, ext } = splitExt(entry.name);
-      if(!PHOTO_EXT.has(ext.toLowerCase())) continue;
-      entries.push({ handle: entry, name: entry.name, base, ext });
+    async function walk(dirHandle, relPath){
+      for await (const entry of dirHandle.values()){
+        if(entry.kind === "file"){
+          const { base, ext } = splitExt(entry.name);
+          if(!PHOTO_EXT.has(ext.toLowerCase())) continue;
+          entries.push({ handle: entry, dirHandle, name: entry.name, base, ext, subPath: relPath });
+        }else if(entry.kind === "directory" && folder.recursive){
+          await walk(entry, relPath ? relPath + "/" + entry.name : entry.name);
+        }
+      }
     }
+    await walk(folder.handle, "");
     // limited concurrency thumbnail generation
     const CONCURRENCY = 5;
     let idx = 0;
@@ -480,6 +552,7 @@
     await Promise.all(Array.from({length: Math.min(CONCURRENCY, entries.length)}, worker));
     folder.files.sort((a,b) => a.name.localeCompare(b.name, "id"));
     if(card) card.textContent = folder.files.length + " foto";
+    applyRememberedSelection(folder.files, folder.sourceKey);
   }
 
   async function buildPhotoRecord(folder, e){
@@ -515,7 +588,9 @@
       uid: photoSeq++,
       folderId: folder.id,
       folderName: folder.name,
-      dirHandle: folder.handle,
+      subPath: e.subPath || "",
+      sourceKey: folder.sourceKey,
+      dirHandle: e.dirHandle,
       fileHandle: e.handle,
       name: e.name,
       base: e.base,
@@ -538,6 +613,7 @@
           <div class="name" title="${folder.name}">${folder.name}</div>
           <div class="count">${folder.files.length} foto</div>
         </div>
+        ${folder.recursive ? '<div class="path">termasuk subfolder</div>' : ''}
         <div class="row2">
           <label class="toggle-inc">
             <input type="checkbox" ${folder.included ? "checked" : ""} data-role="include" />
@@ -564,18 +640,12 @@
   let driveItems = [];
   let driveSeq = 1;
 
-  function extractDriveId(url){
-    let m = url.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
-    if(m) return m[1];
-    m = url.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
-    if(m) return m[1];
-    return null;
-  }
-
-  function resolveImageUrl(rawUrl){
-    const driveId = extractDriveId(rawUrl);
-    if(driveId) return "https://lh3.googleusercontent.com/d/" + driveId + "=w1600";
-    return rawUrl;
+  function driveThumbCandidatesById(driveId){
+    return [
+      "https://drive.google.com/thumbnail?id=" + driveId + "&sz=w1600",
+      "https://lh3.googleusercontent.com/d/" + driveId + "=w1600",
+      "https://drive.google.com/uc?export=view&id=" + driveId
+    ];
   }
 
   function guessExtFromUrl(url){
@@ -583,55 +653,140 @@
     return m ? m[1].toLowerCase() : "jpg";
   }
 
-  $("#btnAddDriveLink").addEventListener("click", () => {
-    const rawUrl = $("#driveLinkInput").value.trim();
-    if(!rawUrl) return;
-    const customName = $("#driveNameInput").value.trim();
-    const ext = guessExtFromUrl(customName || rawUrl);
-    const base = customName ? splitExt(customName).base : ("Tautan_" + String(driveSeq).padStart(3, "0"));
-    const name = base + "." + ext;
-    const item = {
-      uid: photoSeq++,
-      driveItemId: driveSeq++,
-      folderName: "Tautan",
-      dirHandle: null,
-      fileHandle: null,
-      name, base, ext,
-      thumb: resolveImageUrl(rawUrl),
-      url: resolveImageUrl(rawUrl),
-      isRaw: false,
-      size: 0,
-      online: true,
-      selected: false
-    };
-    driveItems.push(item);
-    $("#driveLinkInput").value = "";
-    $("#driveNameInput").value = "";
-    renderDriveList();
-    rebuildPhotoList();
-  });
-
   function renderDriveList(){
     const list = $("#driveList");
     list.innerHTML = "";
-    driveItems.forEach(item => {
-      const card = el("div", "folder-card");
-      card.innerHTML = `
-        <div class="row1">
-          <div class="name" title="${item.name}">${item.name}</div>
-        </div>
-        <div class="row2">
-          <span class="empty-note" style="margin:0;">dari tautan</span>
-          <button class="remove-folder" data-role="remove">Hapus dari daftar</button>
-        </div>`;
-      card.querySelector('[data-role="remove"]').addEventListener("click", () => {
-        driveItems = driveItems.filter(x => x.driveItemId !== item.driveItemId);
+    if(!driveItems.length) return;
+
+    const row = el("div", "folder-card");
+    row.innerHTML = `
+      <div class="row1">
+        <div class="name">${driveItems.length} foto dari folder Drive</div>
+      </div>
+      <div class="row2">
+        <span></span>
+        <button class="remove-folder" data-role="removeAll">Hapus Semua</button>
+      </div>`;
+    row.querySelector('[data-role="removeAll"]').addEventListener("click", () => {
+      driveItems = [];
+      renderDriveList();
+      rebuildPhotoList();
+    });
+    list.appendChild(row);
+  }
+
+  // ============================================================
+  // FOLDER GOOGLE DRIVE (banyak foto sekaligus, termasuk subfolder)
+  // ============================================================
+
+  // API Key milik proyek Google Cloud Anda sendiri (Application restrictions: None,
+  // agar tetap berfungsi baik dibuka lewat hosting maupun langsung sebagai file lokal).
+  // Dibatasi hanya untuk Google Drive API di sisi "API restrictions".
+  const DRIVE_API_KEY = "AIzaSyDZ3Yq9SfhnaR_ue7MDra6iLHsvfa74L34";
+
+  function extractDriveFolderId(input){
+    const raw = input.trim();
+    let m = raw.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
+    if(m) return m[1];
+    m = raw.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+    if(m) return m[1];
+    if(/^[a-zA-Z0-9_-]{10,}$/.test(raw)) return raw; // sudah berupa ID folder
+    return null;
+  }
+
+  async function driveApiListChildren(folderId, apiKey, pageToken){
+    const params = new URLSearchParams({
+      q: "'" + folderId + "' in parents and trashed = false",
+      fields: "nextPageToken, files(id,name,mimeType)",
+      pageSize: "1000",
+      key: apiKey
+    });
+    if(pageToken) params.set("pageToken", pageToken);
+    const res = await fetch("https://www.googleapis.com/drive/v3/files?" + params.toString());
+    if(!res.ok){
+      let msg = "HTTP " + res.status;
+      try{ const body = await res.json(); if(body?.error?.message) msg = body.error.message; }catch(_){}
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+
+  async function walkDriveFolder(folderId, apiKey, recursive, relPath, out, onFolderSeen){
+    let pageToken;
+    do{
+      const data = await driveApiListChildren(folderId, apiKey, pageToken);
+      for(const f of (data.files || [])){
+        if(f.mimeType === "application/vnd.google-apps.folder"){
+          if(onFolderSeen) onFolderSeen();
+          if(recursive){
+            await walkDriveFolder(f.id, apiKey, recursive, relPath ? relPath + "/" + f.name : f.name, out, onFolderSeen);
+          }
+        }else if(f.mimeType && f.mimeType.indexOf("image/") === 0){
+          out.push({ id: f.id, name: f.name, relPath });
+        }
+      }
+      pageToken = data.nextPageToken;
+    }while(pageToken);
+  }
+
+  $("#btnAddDriveFolder").addEventListener("click", async () => {
+    const apiKey = DRIVE_API_KEY;
+    const link = $("#driveFolderInput").value.trim();
+    const recursive = $("#driveFolderRecursive").checked;
+    const btn = $("#btnAddDriveFolder");
+
+    if(!link){ log("#logDriveFolder", "Tempel dulu tautan folder Drive-nya.", "err"); return; }
+    const folderId = extractDriveFolderId(link);
+    if(!folderId){ log("#logDriveFolder", "Tautan folder tidak dikenali.", "err"); return; }
+
+    btn.disabled = true;
+    log("#logDriveFolder", "Membaca folder Drive" + (recursive ? " (termasuk subfolder)" : "") + "…");
+    try{
+      const found = [];
+      let subfolderCount = 0;
+      await walkDriveFolder(folderId, apiKey, recursive, "", found, () => subfolderCount++);
+
+      if(!found.length){
+        log("#logDriveFolder", "Tidak ada foto ditemukan. Pastikan folder dibagikan sebagai \"Siapa saja yang memiliki tautan — Pemirsa\".", "err");
+      }else{
+        const sourceKey = "drive::" + folderId;
+        const newItems = [];
+        found.forEach(f => {
+          const { base, ext } = splitExt(f.name);
+          const candidates = driveThumbCandidatesById(f.id);
+          const item = {
+            uid: photoSeq++,
+            driveItemId: driveSeq++,
+            folderName: "Drive",
+            subPath: f.relPath,
+            sourceKey,
+            dirHandle: null,
+            fileHandle: null,
+            name: f.name, base, ext: ext || guessExtFromUrl(f.name),
+            driveId: f.id,
+            urlCandidates: candidates,
+            urlIndex: 0,
+            thumb: candidates[0],
+            url: candidates[0],
+            isRaw: false,
+            size: 0,
+            online: true,
+            selected: false
+          };
+          driveItems.push(item);
+          newItems.push(item);
+        });
+        applyRememberedSelection(newItems, sourceKey);
         renderDriveList();
         rebuildPhotoList();
-      });
-      list.appendChild(card);
-    });
-  }
+        log("#logDriveFolder", found.length + " foto ditambahkan" + (subfolderCount ? " dari " + (subfolderCount+1) + " folder" : "") + ".", "ok");
+      }
+    }catch(e){
+      log("#logDriveFolder", "Gagal: " + (e.message || e) + ". Pastikan folder dibagikan publik, dan Google Drive API sudah aktif di Google Cloud Console.", "err");
+    }finally{
+      btn.disabled = false;
+    }
+  });
 
   // ============================================================
   // GRID / SELECTION
@@ -663,6 +818,7 @@
         mark.classList.toggle("marked", p.selected);
         updateCounter();
         refreshSegmentUI();
+        persistSelection();
       });
 
       const body = el("div", "frame-body");
@@ -670,6 +826,18 @@
         const img = el("img");
         img.src = p.thumb;
         img.loading = "lazy";
+        img.referrerPolicy = "no-referrer";
+        if(p.online && p.urlCandidates){
+          img.addEventListener("error", () => {
+            if(p.urlIndex < p.urlCandidates.length - 1){
+              p.urlIndex++;
+              p.thumb = p.urlCandidates[p.urlIndex];
+              img.src = p.thumb;
+            }else{
+              body.innerHTML = '<div class="raw-placeholder"><span class="ext-badge">!</span><span>Gagal memuat gambar</span></div>';
+            }
+          }, { once: false });
+        }
         body.appendChild(img);
       }else{
         const ph = el("div", "raw-placeholder");
@@ -681,17 +849,23 @@
       body.appendChild(badge);
       if(p.online){
         const onlineBadge = el("span", "frame-online");
-        onlineBadge.textContent = "Tautan";
+        onlineBadge.textContent = "Drive";
         body.appendChild(onlineBadge);
       }
 
       const nameEl = el("div", "frame-name");
       nameEl.textContent = p.name;
-      nameEl.title = p.name;
+      nameEl.title = p.subPath ? p.subPath + "/" + p.name : p.name;
 
       frame.appendChild(mark);
       frame.appendChild(body);
       frame.appendChild(nameEl);
+      if(p.subPath){
+        const pathEl = el("div", "frame-path");
+        pathEl.textContent = p.subPath;
+        pathEl.title = p.subPath;
+        frame.appendChild(pathEl);
+      }
 
       frame.addEventListener("click", (ev) => {
         if(ev.target.closest(".mark")) return;
@@ -713,18 +887,18 @@
 
   $("#btnSelectAll").addEventListener("click", () => {
     photos.forEach(p => p.selected = true);
-    renderGrid(); updateCounter(); refreshSegmentUI();
+    renderGrid(); updateCounter(); refreshSegmentUI(); persistSelection();
   });
   $("#btnSelectNone").addEventListener("click", () => {
     photos.forEach(p => p.selected = false);
-    renderGrid(); updateCounter(); refreshSegmentUI();
+    renderGrid(); updateCounter(); refreshSegmentUI(); persistSelection();
   });
   $("#btnRange").addEventListener("click", () => {
     const from = parseInt($("#rangeFrom").value, 10);
     const to = parseInt($("#rangeTo").value, 10);
     if(!from || !to || from < 1 || to < from) return;
     photos.forEach((p, i) => { p.selected = (i+1 >= from && i+1 <= to); });
-    renderGrid(); updateCounter(); refreshSegmentUI();
+    renderGrid(); updateCounter(); refreshSegmentUI(); persistSelection();
   });
 
   async function setPreview(uid){
@@ -743,14 +917,22 @@
       if(currentPreviewUrl){ URL.revokeObjectURL(currentPreviewUrl); currentPreviewUrl = null; }
       frameBox.innerHTML = "";
       const img = el("img");
-      img.src = p.url;
+      img.referrerPolicy = "no-referrer";
+      let previewIdx = 0;
+      const candidates = p.urlCandidates || [p.url];
+      img.src = candidates[previewIdx];
       img.onerror = () => {
-        frameBox.innerHTML = '<div class="placeholder">Gambar tidak bisa dimuat. Pastikan tautan bersifat publik ("siapa saja yang memiliki tautan").</div>';
+        if(previewIdx < candidates.length - 1){
+          previewIdx++;
+          img.src = candidates[previewIdx];
+        }else{
+          frameBox.innerHTML = '<div class="placeholder">Gambar tidak bisa dimuat. Pastikan tautan/folder bersifat publik ("siapa saja yang memiliki tautan — Pemirsa").</div>';
+        }
       };
       frameBox.appendChild(img);
       metaBox.innerHTML =
         "<div><b>Nama:</b> " + p.name + "</div>" +
-        "<div><b>Sumber:</b> Tautan (bukan berkas lokal)</div>";
+        "<div><b>Sumber:</b> Folder Drive" + (p.subPath ? " / " + p.subPath : "") + " (bukan berkas lokal)</div>";
       return;
     }
 
@@ -769,7 +951,7 @@
       }
       metaBox.innerHTML =
         "<div><b>Nama:</b> " + p.name + "</div>" +
-        "<div><b>Folder:</b> " + p.folderName + "</div>" +
+        "<div><b>Folder:</b> " + p.folderName + (p.subPath ? " / " + p.subPath : "") + "</div>" +
         "<div><b>Ukuran:</b> " + formatSize(p.size) + "</div>";
     }catch(e){
       frameBox.innerHTML = '<div class="placeholder">Gagal memuat berkas ini.</div>';
@@ -824,7 +1006,7 @@
       const isMatch = tokensLower.some(t => t === nameLower || t === baseLower || nameLower.includes(t));
       if(isMatch){ p.selected = true; matched++; }
     });
-    renderGrid(); updateCounter(); refreshSegmentUI();
+    renderGrid(); updateCounter(); refreshSegmentUI(); persistSelection();
     log("#logPaste", matched + " dari " + tokens.length + " teks cocok dan dipilih.", matched ? "ok" : "err");
   });
 
