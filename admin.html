@@ -535,16 +535,66 @@ async function loadAdmin(){
 // ================================================================
 // PILIHAN KLIEN
 // ================================================================
+// Salin teks ke clipboard — coba API modern dulu, kalau gagal (browser lama /
+// halaman tidak dibuka lewat https) pakai cara lama lewat textarea sementara.
+async function copyTextToClipboard(text){
+  try{
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  }catch(_){}
+  try{
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }catch(_){ return false; }
+}
+
+// Susun teks ringkasan pilihan 1 klien (dipakai tombol "Salin Pilihan" per
+// klien maupun tombol "Salin Semua Pilihan Klien").
+function buildPilihanText(p){
+  const waktu = p.waktu ? new Date(p.waktu).toLocaleString("id-ID", { dateStyle:"medium", timeStyle:"short" }) : "";
+  const lines = [];
+  lines.push("Pilihan foto — " + (p.nama || p.username) + " (" + p.username + ")");
+  if(waktu) lines.push("Dikirim: " + waktu);
+  Object.keys(p.data || {}).forEach(kat => {
+    const files = p.data[kat] || [];
+    lines.push("");
+    lines.push(kat + " (" + files.length + " foto):");
+    if(!files.length){
+      lines.push("- (belum ada)");
+    }else{
+      files.forEach(f => lines.push("- " + f));
+    }
+  });
+  return lines.join("\n");
+}
+
 async function loadPilihan(){
   const wrap = document.getElementById("pilihanWrap");
   const data = await api("listPilihan");
   if(!data.ok){ wrap.innerHTML = '<p class="empty">Gagal memuat: ' + (data.error||"") + '</p>'; return; }
   if(!data.data.length){ wrap.innerHTML = '<p class="empty">Belum ada klien yang mengirim pilihan final.</p>'; return; }
-  let html = "";
-  data.data.forEach(p => {
+
+  let html = `<div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+    <button class="btn small" id="btnCopySemuaPilihan" type="button">📋 Salin Semua Pilihan Klien</button>
+  </div>`;
+  data.data.forEach((p, idx) => {
     const waktu = p.waktu ? new Date(p.waktu).toLocaleString("id-ID", { dateStyle:"medium", timeStyle:"short" }) : "";
-    html += `<div class="panel" style="margin-bottom:14px;"><h2>${p.nama || p.username} <span style="color:var(--text-faint); font-weight:500;">(${p.username})</span></h2>
-      <p style="font-size:11.5px; color:var(--text-faint); margin-top:-8px;">Dikirim: ${waktu}</p>`;
+    html += `<div class="panel" style="margin-bottom:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <h2 style="margin:0;">${p.nama || p.username} <span style="color:var(--text-faint); font-weight:500;">(${p.username})</span></h2>
+        <button class="btn small" data-act="copyPilihan" data-idx="${idx}" type="button">📋 Salin Pilihan</button>
+      </div>
+      <p style="font-size:11.5px; color:var(--text-faint); margin:2px 0 8px;">Dikirim: ${waktu}</p>`;
     Object.keys(p.data || {}).forEach(kat => {
       const files = p.data[kat] || [];
       html += `<p style="font-size:13px; margin:8px 0 4px;"><b>${kat}</b> — ${files.length} foto</p>`;
@@ -553,6 +603,26 @@ async function loadPilihan(){
     html += "</div>";
   });
   wrap.innerHTML = html;
+
+  wrap.querySelectorAll('[data-act="copyPilihan"]').forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const p = data.data[Number(btn.dataset.idx)];
+      if(!p) return;
+      const ok = await copyTextToClipboard(buildPilihanText(p));
+      const original = btn.textContent;
+      btn.textContent = ok ? "Disalin ✓" : "Gagal menyalin";
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    });
+  });
+
+  const btnAll = document.getElementById("btnCopySemuaPilihan");
+  if(btnAll) btnAll.addEventListener("click", async () => {
+    const text = data.data.map(buildPilihanText).join("\n\n" + "=".repeat(40) + "\n\n");
+    const ok = await copyTextToClipboard(text);
+    const original = btnAll.textContent;
+    btnAll.textContent = ok ? "Semua Disalin ✓" : "Gagal menyalin";
+    setTimeout(() => { btnAll.textContent = original; }, 1500);
+  });
 }
 
 // ================================================================
